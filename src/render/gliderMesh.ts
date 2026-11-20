@@ -374,14 +374,14 @@ function createFuselageGeometry(): BufferGeometry {
 }
 
 /**
- * Moulded instrument dash. The top is a broad arch under the canopy coaming;
- * the lower edge sweeps up in two deep arches for the pilot's knees, leaving a
- * centre stem between them. The stem disappears into the centre console.
+ * Moulded instrument dash. The top is a straight rail under the canopy
+ * coaming; the lower edge sweeps up in two deep arches for the pilot's knees,
+ * leaving a centre stem between them. The stem disappears into the centre
+ * console.
  */
 function createDashShape(): Shape {
   const half = 0.25;
-  const topShoulder = 0.126;
-  const topCentre = 0.15;
+  const topEdge = 0.113;
   const shoulderX = 0.235;
   const sideBottom = -0.103;
   const outerBottom = -0.115;
@@ -393,10 +393,11 @@ function createDashShape(): Shape {
   const stemCorner = 0.012;
 
   const shape = new Shape();
-  shape.moveTo(-shoulderX, topShoulder);
-  shape.bezierCurveTo(-0.15, 0.14, -0.07, topCentre, 0, topCentre);
-  shape.bezierCurveTo(0.07, topCentre, 0.15, 0.14, shoulderX, topShoulder);
-  shape.quadraticCurveTo(half, topShoulder, half, 0.1);
+  shape.moveTo(-shoulderX, topEdge);
+  // A straight top rail leaves more over-the-nose view than the old shallow
+  // arch without sacrificing the deep knee cut-outs below.
+  shape.lineTo(shoulderX, topEdge);
+  shape.quadraticCurveTo(half, topEdge, half, 0.1);
   shape.lineTo(half, sideBottom);
   shape.quadraticCurveTo(half, outerBottom, half - 0.012, outerBottom);
   shape.quadraticCurveTo(0.205, archPeak, archPeakX, archPeak);
@@ -410,7 +411,7 @@ function createDashShape(): Shape {
   shape.quadraticCurveTo(-0.205, archPeak, -half + 0.012, outerBottom);
   shape.quadraticCurveTo(-half, outerBottom, -half, sideBottom);
   shape.lineTo(-half, 0.1);
-  shape.quadraticCurveTo(-half, topShoulder, -shoulderX, topShoulder);
+  shape.quadraticCurveTo(-half, topEdge, -shoulderX, topEdge);
   shape.closePath();
   return shape;
 }
@@ -1201,7 +1202,7 @@ export class GliderMesh {
     // its rounded inner corners leave knee space either side of the centre
     // console.
     const dashboard = new Group();
-    dashboard.position.set(0, 0.4, -1.3);
+    dashboard.position.set(0, 0.452, -1.3);
     dashboard.rotation.x = -0.3;
     this.body.add(dashboard);
 
@@ -1233,9 +1234,9 @@ export class GliderMesh {
     dashboard.add(panelFace);
 
     // Dark padded brow over the dials, echoing the hooded panel of a glass
-    // ship. It is narrow enough to stay inside the arched dash silhouette.
+    // ship. It is narrow enough to stay inside the dash silhouette.
     const brow = new Mesh(new BoxGeometry(0.44, 0.022, 0.06), coamingMaterial);
-    brow.position.set(0, 0.108, 0.025);
+    brow.position.set(0, 0.102, 0.025);
     dashboard.add(brow);
 
     // Centre console running back from the dash between the knees. Baked
