@@ -589,9 +589,12 @@ const GREEN = "#3fae62";
 const DIAL_FACE_INNER = "#3c4147";
 const DIAL_FACE_OUTER = "#22262a";
 const DIAL_MARK = "#eef2f4";
-const DIAL_MARK_DIM = "rgba(232, 238, 241, 0.72)";
-const DIAL_LABEL = "#f0f3f4";
+const DIAL_MARK_DIM = "rgba(235, 242, 245, 0.55)";
+const DIAL_NUMBER = "#d8e2e6";
+const DIAL_LABEL = "#e9eef1";
 const NEEDLE = "#f5f7f8";
+/** The HUD cluster uses a 50 px gauge radius; scale its line weights to the panel. */
+const HUD_GAUGE_RADIUS = 50;
 
 function dialAngle(fraction: number): number {
   return DIAL_START + DIAL_SWEEP * clamp01(fraction);
@@ -636,33 +639,33 @@ function paintDial(
 
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.fillStyle = DIAL_MARK;
-  context.font = "600 15px ui-monospace, SFMono-Regular, Menlo, monospace";
+  context.fillStyle = DIAL_NUMBER;
+  context.font = "400 18px ui-monospace, SFMono-Regular, Menlo, monospace";
   for (let i = 0; i < values.length; i++) {
     const angle = dialAngle(i / (values.length - 1));
     context.fillText(
       format(values[i]),
-      cx + Math.cos(angle) * radius * 0.66,
-      cy + Math.sin(angle) * radius * 0.66,
+      cx + Math.cos(angle) * radius * 0.6,
+      cy + Math.sin(angle) * radius * 0.6,
     );
   }
 
-  // Minor ticks every 5% of the sweep, longer ticks every 25%.
-  context.strokeStyle = DIAL_MARK;
+  // Minor ticks every 5% of the sweep, longer ticks every 25%. Match the HUD's
+  // thin, round-capped marks rather than heavier mechanical engraving.
   context.lineCap = "round";
   for (let i = 0; i <= 20; i++) {
     const angle = dialAngle(i / 20);
     const major = i % 5 === 0;
-    const inner = radius * (major ? 0.79 : 0.85);
+    const inner = radius * (major ? 0.77 : 0.85);
     context.beginPath();
     context.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
     context.lineTo(cx + Math.cos(angle) * radius * 0.93, cy + Math.sin(angle) * radius * 0.93);
-    context.lineWidth = major ? 3 : 1.5;
+    context.lineWidth = 3;
     context.strokeStyle = major ? DIAL_MARK : DIAL_MARK_DIM;
     context.stroke();
   }
 
-  context.font = "600 15px ui-sans-serif, system-ui, sans-serif";
+  context.font = "600 18px ui-monospace, SFMono-Regular, Menlo, monospace";
   context.fillStyle = DIAL_LABEL;
   context.fillText(label, cx, cy + radius * 0.3);
 }
@@ -797,25 +800,24 @@ function drawNeedle(
 ): void {
   const cy = DIAL_CY;
   const radius = DIAL_RADIUS;
+  const scale = radius / HUD_GAUGE_RADIUS;
+
   context.save();
   context.translate(cx, cy);
   context.rotate(dialAngle(fraction));
+  context.strokeStyle = color;
+  context.lineWidth = 2.2 * scale;
+  context.lineCap = "round";
   context.beginPath();
-  context.moveTo(-radius * 0.16, -5);
-  context.lineTo(radius * 0.84, 0);
-  context.lineTo(-radius * 0.16, 5);
-  context.closePath();
-  context.fillStyle = color;
-  context.fill();
+  context.moveTo(-8 * scale, 0);
+  context.lineTo(radius - 13 * scale, 0);
+  context.stroke();
   context.restore();
 
+  // A plain round hub, matching the HUD needles.
   context.beginPath();
-  context.arc(cx, cy, radius * 0.07, 0, Math.PI * 2);
-  context.fillStyle = "#0e1113";
-  context.fill();
-  context.beginPath();
-  context.arc(cx, cy, radius * 0.03, 0, Math.PI * 2);
-  context.fillStyle = NEEDLE;
+  context.arc(cx, cy, 3.2 * scale, 0, Math.PI * 2);
+  context.fillStyle = color;
   context.fill();
 }
 
