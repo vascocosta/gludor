@@ -1201,7 +1201,7 @@ export class GliderMesh {
     // its rounded inner corners leave knee space either side of the centre
     // console.
     const dashboard = new Group();
-    dashboard.position.set(0, 0.452, -1.3);
+    dashboard.position.set(0, 0.4, -1.3);
     dashboard.rotation.x = -0.3;
     this.body.add(dashboard);
 
