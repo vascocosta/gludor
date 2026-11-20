@@ -824,8 +824,11 @@ const response = (dt: number, tau: number): number => 1 - Math.exp(-dt / tau);
 /** Live cockpit instruments: a cached dial face plus redrawn needles. */
 class PanelInstruments {
   readonly texture: CanvasTexture;
+  readonly glowTexture: CanvasTexture;
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
+  private readonly glowCanvas: HTMLCanvasElement;
+  private readonly glowContext: CanvasRenderingContext2D;
   private readonly background: HTMLCanvasElement;
 
   private ias = 0;
@@ -844,6 +847,13 @@ class PanelInstruments {
     if (!context) throw new Error("2D canvas unavailable");
     this.context = context;
 
+    this.glowCanvas = document.createElement("canvas");
+    this.glowCanvas.width = PANEL_WIDTH;
+    this.glowCanvas.height = PANEL_HEIGHT;
+    const glowContext = this.glowCanvas.getContext("2d");
+    if (!glowContext) throw new Error("2D canvas unavailable");
+    this.glowContext = glowContext;
+
     this.background = document.createElement("canvas");
     this.background.width = PANEL_WIDTH;
     this.background.height = PANEL_HEIGHT;
@@ -854,6 +864,10 @@ class PanelInstruments {
     this.texture = new CanvasTexture(this.canvas);
     this.texture.colorSpace = SRGBColorSpace;
     this.texture.anisotropy = 8;
+
+    this.glowTexture = new CanvasTexture(this.glowCanvas);
+    this.glowTexture.colorSpace = SRGBColorSpace;
+    this.glowTexture.anisotropy = 8;
 
     this.redraw();
   }
@@ -894,11 +908,35 @@ class PanelInstruments {
     const context = this.context;
     context.clearRect(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
     context.drawImage(this.background, 0, 0);
-
     drawNeedle(context, DIAL_CENTRES[0], this.iasFraction, NEEDLE);
     drawNeedle(context, DIAL_CENTRES[1], this.altFraction, NEEDLE);
     drawNeedle(context, DIAL_CENTRES[2], this.varioFraction, NEEDLE);
+    this.drawReadings(context);
 
+    // The emissive map is a separate layer: only the round dials and their
+    // readouts glow, so the surrounding dash panel stays matte.
+    const glow = this.glowContext;
+    glow.fillStyle = "#000";
+    glow.fillRect(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+    glow.save();
+    glow.beginPath();
+    for (const cx of DIAL_CENTRES) {
+      glow.moveTo(cx + DIAL_RADIUS + 8, DIAL_CY);
+      glow.arc(cx, DIAL_CY, DIAL_RADIUS + 8, 0, Math.PI * 2);
+    }
+    glow.clip();
+    glow.drawImage(this.background, 0, 0);
+    drawNeedle(glow, DIAL_CENTRES[0], this.iasFraction, NEEDLE);
+    drawNeedle(glow, DIAL_CENTRES[1], this.altFraction, NEEDLE);
+    drawNeedle(glow, DIAL_CENTRES[2], this.varioFraction, NEEDLE);
+    glow.restore();
+    this.drawReadings(glow);
+
+    this.texture.needsUpdate = true;
+    this.glowTexture.needsUpdate = true;
+  }
+
+  private drawReadings(context: CanvasRenderingContext2D): void {
     const lift = this.vario >= 0;
     const readings: Array<[number, string, string, string]> = [
       [DIAL_CENTRES[0], `${Math.round(Math.max(0, this.ias))}`, "km/h", "#dfeef2"],
@@ -922,8 +960,6 @@ class PanelInstruments {
       context.fillStyle = "#7f969e";
       context.fillText(unit, cx, 314);
     }
-
-    this.texture.needsUpdate = true;
   }
 }
 
@@ -1138,7 +1174,7 @@ export class GliderMesh {
         roughness: 0.7,
         metalness: 0.05,
         emissive: 0xffffff,
-        emissiveMap: this.instruments.texture,
+        emissiveMap: this.instruments.glowTexture,
         emissiveIntensity: 0.7,
         toneMapped: false,
       }),
