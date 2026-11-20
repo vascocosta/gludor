@@ -5,16 +5,22 @@ interface MusicVoice {
   oscillator: OscillatorNode;
 }
 
-/** Slow four-note chords for the ambient bed. */
+/** Slow chords for the ambient bed, from the bass up. */
 const MUSIC_CHORDS = [
-  [146.83, 220.0, 293.66, 349.23], // D minor
-  [130.81, 196.0, 261.63, 329.63], // C major
-  [116.54, 174.61, 233.08, 293.66], // B-flat major
-  [110.0, 164.81, 220.0, 329.63], // A minor
+  [73.42, 146.83, 220.0, 293.66, 349.23], // Dm(add9)
+  [116.54, 174.61, 233.08, 293.66, 349.23], // B-flat major
+  [87.31, 174.61, 261.63, 349.23, 392.0], // F major
+  [130.81, 196.0, 261.63, 329.63, 392.0], // C major
+  [98.0, 146.83, 196.0, 233.08, 293.66], // G minor
+  [110.0, 164.81, 220.0, 261.63, 329.63], // A minor
+  [73.42, 146.83, 220.0, 293.66, 349.23], // D minor
+  [110.0, 164.81, 220.0, 293.66, 329.63], // A sus4
 ];
-/** D-minor pentatonic notes for the sparse bells. */
-const MUSIC_BELLS = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33];
-const MUSIC_LEVEL = 0.7;
+/** D-minor pentatonic notes for the melody. */
+const MUSIC_PENTATONIC = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33];
+/** Higher pentatonic notes for the sparse bells. */
+const MUSIC_BELLS = [587.33, 783.99, 880.0, 1046.5];
+const MUSIC_LEVEL = 1.1;
 const MUSIC_CHORD_SECONDS = 9;
 
 /** Small WebAudio soundscape: wind, vario beeps, a stall horn and a thud. */
@@ -34,7 +40,9 @@ export class AudioEngine {
   private musicEnabled = false;
   private musicStep = 0;
   private musicChordClock = 0;
-  private musicBellClock = 4;
+  private musicBellClock = 6;
+  private musicMelodyClock = 2;
+  private musicMelodyIndex = 2;
   private noiseBuffer: AudioBuffer | null = null;
   private beepClock = 0;
   private muted = false;
@@ -155,12 +163,12 @@ export class AudioEngine {
       lfoDepth.connect(musicFilter.frequency);
       lfo.start();
 
-      const voiceGains = [0.34, 0.2, 0.16, 0.13];
+      const voiceGains = [0.3, 0.2, 0.16, 0.12, 0.1];
       this.musicVoices = MUSIC_CHORDS[0].map((frequency, index) => {
         const oscillator = context.createOscillator();
-        oscillator.type = "triangle";
+        oscillator.type = index <= 2 ? "triangle" : "sine";
         oscillator.frequency.value = frequency;
-        oscillator.detune.value = (index - 1.5) * 5;
+        oscillator.detune.value = (index - 2) * 4;
         const gain = context.createGain();
         gain.gain.value = voiceGains[index] ?? 0.12;
         const panner = context.createStereoPanner();
@@ -362,10 +370,72 @@ export class AudioEngine {
 
     this.musicBellClock -= dt;
     if (this.musicBellClock <= 0) {
-      this.musicBellClock = 6 + Math.random() * 7;
+      this.musicBellClock = 10 + Math.random() * 8;
       const frequency = MUSIC_BELLS[Math.floor(Math.random() * MUSIC_BELLS.length)];
       this.musicBell(frequency);
     }
+
+    // A slow pentatonic melody wanders over the pad. It prefers stepwise
+    // motion, leaves rests, and occasionally jumps an octave.
+    this.musicMelodyClock -= dt;
+    if (this.musicMelodyClock <= 0) {
+      this.musicMelodyClock = 0.9 + Math.random() * 1.1;
+      if (Math.random() > 0.18) {
+        const steps = [-2, -1, -1, 0, 1, 1, 2];
+        const step = steps[Math.floor(Math.random() * steps.length)];
+        this.musicMelodyIndex = clamp(
+          this.musicMelodyIndex + step,
+          0,
+          MUSIC_PENTATONIC.length - 1,
+        );
+        let frequency = MUSIC_PENTATONIC[this.musicMelodyIndex];
+        if (Math.random() < 0.12 && this.musicMelodyIndex <= 3) frequency *= 2;
+        this.musicNote(frequency, 0.16 + Math.random() * 0.07, 1.2 + Math.random() * 1.4);
+      }
+    }
+  }
+
+  /** A soft lead note: a triangle fundamental with a quiet octave shimmer. */
+  private musicNote(frequency: number, level: number, duration: number): void {
+    if (!this.context || !this.musicGain) return;
+    const now = this.context.currentTime;
+
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(level, now + 0.06);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    const filter = this.context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = Math.max(1200, frequency * 4);
+    filter.Q.value = 0.4;
+
+    const panner = this.context.createStereoPanner();
+    panner.pan.value = Math.random() * 0.7 - 0.35;
+
+    const oscillator = this.context.createOscillator();
+    oscillator.type = "triangle";
+    oscillator.frequency.value = frequency;
+    oscillator.detune.value = Math.random() * 6 - 3;
+
+    const shimmer = this.context.createOscillator();
+    shimmer.type = "sine";
+    shimmer.frequency.value = frequency * 2;
+    const shimmerGain = this.context.createGain();
+    shimmerGain.gain.value = 0.18;
+
+    oscillator.connect(gain);
+    shimmer.connect(shimmerGain);
+    shimmerGain.connect(gain);
+    gain.connect(filter);
+    filter.connect(panner);
+    panner.connect(this.musicGain);
+    if (this.musicDelay) panner.connect(this.musicDelay);
+
+    oscillator.start(now);
+    shimmer.start(now);
+    oscillator.stop(now + duration + 0.1);
+    shimmer.stop(now + duration + 0.1);
   }
 
   private musicBell(frequency: number): void {
