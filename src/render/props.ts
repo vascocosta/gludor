@@ -475,10 +475,10 @@ export class Airfield {
     };
 
     // Parallel strips: the asphalt is right of the grass when heading north.
-    addRunwayNumber("36R", 0, 925, 18, 12, false, this.fieldY + 0.095);
-    addRunwayNumber("18L", 0, -925, 18, 12, true, this.fieldY + 0.095);
-    addRunwayNumber("36L", GRASS_RUNWAY.x, 520, 16, 10.67, false, this.fieldY + 0.075);
-    addRunwayNumber("18R", GRASS_RUNWAY.x, -520, 16, 10.67, true, this.fieldY + 0.075);
+    addRunwayNumber("36R", 0, 925, 36, 24, false, this.fieldY + 0.095);
+    addRunwayNumber("18L", 0, -925, 36, 24, true, this.fieldY + 0.095);
+    addRunwayNumber("36L", GRASS_RUNWAY.x, 520, 32, 21.33, false, this.fieldY + 0.075);
+    addRunwayNumber("18R", GRASS_RUNWAY.x, -520, 32, 21.33, true, this.fieldY + 0.075);
 
     const hangarMaterial = new MeshStandardMaterial({ color: 0x9a9b93, roughness: 0.85 });
     const roofMaterial = new MeshStandardMaterial({ color: 0x5b5f62, roughness: 0.9 });
