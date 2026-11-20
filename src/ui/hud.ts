@@ -242,9 +242,9 @@ export class Hud {
     for (let i = 0; i <= 10; i++) {
       const angle = start + (i / 10) * sweep;
       const major = i % 2 === 0;
-      this.tick(x, y, r, angle, major ? 8 : 4, major ? "#dfeef2" : "rgba(220,240,245,0.45)");
+      this.tick(x, y, r, angle, major ? 8 : 4, major ? "#eef2f4" : "rgba(235,242,245,0.55)");
       if (major) {
-        this.label(x, y, r - 20, angle, `${i * 20}`, 9, "#b9cdd3");
+        this.label(x, y, r - 20, angle, `${i * 20}`, 9, "#d8e2e6");
       }
     }
     const needle = start + clamp(value / 200, 0, 1) * sweep;
@@ -257,8 +257,8 @@ export class Hud {
     const start = -Math.PI / 2;
     for (let i = 0; i < 10; i++) {
       const angle = start + (i / 10) * Math.PI * 2;
-      this.tick(x, y, r, angle, 8, "#dfeef2");
-      this.label(x, y, r - 20, angle, `${i}`, 9, "#b9cdd3");
+      this.tick(x, y, r, angle, 8, "#eef2f4");
+      this.label(x, y, r - 20, angle, `${i}`, 9, "#d8e2e6");
     }
     const remainder = ((altitude % 1000) + 1000) % 1000;
     this.needle(x, y, r - 13, start + (remainder / 1000) * Math.PI * 2, "#f7fbff");
@@ -293,14 +293,14 @@ export class Hud {
     for (let i = 0; i <= 10; i++) {
       const angle = start + (i / 10) * sweep;
       const major = i % 2 === 0;
-      this.tick(x, y, r, angle, major ? 8 : 4, major ? "#dfeef2" : "rgba(220,240,245,0.45)");
+      this.tick(x, y, r, angle, major ? 8 : 4, major ? "#eef2f4" : "rgba(235,242,245,0.55)");
       if (major) {
         const label = i * 1 - 5;
-        this.label(x, y, r - 20, angle, `${label}`, 9, "#b9cdd3");
+        this.label(x, y, r - 20, angle, `${label}`, 9, "#d8e2e6");
       }
     }
     const needle = start + clamp((value + 5) / 10, 0, 1) * sweep;
-    this.needle(x, y, r - 13, needle, value >= 0 ? GREEN : AMBER);
+    this.needle(x, y, r - 13, needle, "#f5f7f8");
 
     ctx.save();
     ctx.textAlign = "center";
@@ -314,19 +314,23 @@ export class Hud {
   private gaugeFace(x: number, y: number, r: number, title: string, unit: string): void {
     const ctx = this.ctx;
     ctx.save();
+    const face = ctx.createRadialGradient(x, y - r * 0.25, r * 0.08, x, y, r);
+    face.addColorStop(0, "#3b4045");
+    face.addColorStop(0.7, "#2d3237");
+    face.addColorStop(1, "#22262a");
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(6, 10, 13, 0.9)";
+    ctx.fillStyle = face;
     ctx.fill();
-    ctx.strokeStyle = "rgba(190, 225, 235, 0.22)";
+    ctx.strokeStyle = "rgba(205, 225, 232, 0.28)";
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#cfe2e7";
+    ctx.fillStyle = "#e9eef1";
     ctx.font = "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
     ctx.fillText(title, x, y - r + 14);
-    ctx.fillStyle = "rgba(170, 195, 202, 0.65)";
+    ctx.fillStyle = "rgba(205, 218, 223, 0.72)";
     ctx.fillText(unit, x, y + r - 8);
     ctx.restore();
   }

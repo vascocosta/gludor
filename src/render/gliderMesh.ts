@@ -584,8 +584,14 @@ const ALT_SCALE = 1000; // metres per needle revolution
 const VARIO_SCALE = 5; // m/s at either end
 
 const AMBER = "#d0862f";
-const ORANGE = "#e8862f";
 const GREEN = "#3fae62";
+/** Dark instrument face with white markings, like a real glider panel. */
+const DIAL_FACE_INNER = "#3c4147";
+const DIAL_FACE_OUTER = "#22262a";
+const DIAL_MARK = "#eef2f4";
+const DIAL_MARK_DIM = "rgba(232, 238, 241, 0.72)";
+const DIAL_LABEL = "#f0f3f4";
+const NEEDLE = "#f5f7f8";
 
 function dialAngle(fraction: number): number {
   return DIAL_START + DIAL_SWEEP * clamp01(fraction);
@@ -604,20 +610,33 @@ function paintDial(
 
   context.beginPath();
   context.arc(cx, cy, radius + 8, 0, Math.PI * 2);
-  context.fillStyle = "#9aa3ab";
+  context.fillStyle = "#8a9299";
   context.fill();
 
+  // A slightly lifted dark grey face with a soft vignette. It reads as black
+  // against a dark cockpit but keeps enough contrast for the white markings.
+  const face = context.createRadialGradient(
+    cx,
+    cy - radius * 0.28,
+    radius * 0.08,
+    cx,
+    cy,
+    radius,
+  );
+  face.addColorStop(0, DIAL_FACE_INNER);
+  face.addColorStop(0.68, "#2f3439");
+  face.addColorStop(1, DIAL_FACE_OUTER);
   context.beginPath();
   context.arc(cx, cy, radius, 0, Math.PI * 2);
-  context.fillStyle = "#e9e7db";
+  context.fillStyle = face;
   context.fill();
-  context.strokeStyle = "#22272c";
+  context.strokeStyle = "#101315";
   context.lineWidth = 3;
   context.stroke();
 
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.fillStyle = "#3a3f45";
+  context.fillStyle = DIAL_MARK;
   context.font = "600 15px ui-monospace, SFMono-Regular, Menlo, monospace";
   for (let i = 0; i < values.length; i++) {
     const angle = dialAngle(i / (values.length - 1));
@@ -629,7 +648,8 @@ function paintDial(
   }
 
   // Minor ticks every 5% of the sweep, longer ticks every 25%.
-  context.strokeStyle = "#33383d";
+  context.strokeStyle = DIAL_MARK;
+  context.lineCap = "round";
   for (let i = 0; i <= 20; i++) {
     const angle = dialAngle(i / 20);
     const major = i % 5 === 0;
@@ -638,11 +658,12 @@ function paintDial(
     context.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
     context.lineTo(cx + Math.cos(angle) * radius * 0.93, cy + Math.sin(angle) * radius * 0.93);
     context.lineWidth = major ? 3 : 1.5;
+    context.strokeStyle = major ? DIAL_MARK : DIAL_MARK_DIM;
     context.stroke();
   }
 
   context.font = "600 15px ui-sans-serif, system-ui, sans-serif";
-  context.fillStyle = "#3a3f45";
+  context.fillStyle = DIAL_LABEL;
   context.fillText(label, cx, cy + radius * 0.3);
 }
 
@@ -702,7 +723,7 @@ function paintPanelBackground(context: CanvasRenderingContext2D): void {
   for (const cx of DIAL_CENTRES) {
     context.beginPath();
     context.roundRect(cx - 82, 288, 164, 46, 6);
-    context.fillStyle = "#11161b";
+    context.fillStyle = "#191e22";
     context.fill();
     context.strokeStyle = "#3a444d";
     context.lineWidth = 1.5;
@@ -790,11 +811,11 @@ function drawNeedle(
 
   context.beginPath();
   context.arc(cx, cy, radius * 0.07, 0, Math.PI * 2);
-  context.fillStyle = "#33383d";
+  context.fillStyle = "#0e1113";
   context.fill();
   context.beginPath();
   context.arc(cx, cy, radius * 0.03, 0, Math.PI * 2);
-  context.fillStyle = "#9aa3ab";
+  context.fillStyle = NEEDLE;
   context.fill();
 }
 
@@ -874,14 +895,9 @@ class PanelInstruments {
     context.clearRect(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
     context.drawImage(this.background, 0, 0);
 
-    drawNeedle(context, DIAL_CENTRES[0], this.iasFraction, ORANGE);
-    drawNeedle(context, DIAL_CENTRES[1], this.altFraction, ORANGE);
-    drawNeedle(
-      context,
-      DIAL_CENTRES[2],
-      this.varioFraction,
-      this.vario >= 0 ? GREEN : AMBER,
-    );
+    drawNeedle(context, DIAL_CENTRES[0], this.iasFraction, NEEDLE);
+    drawNeedle(context, DIAL_CENTRES[1], this.altFraction, NEEDLE);
+    drawNeedle(context, DIAL_CENTRES[2], this.varioFraction, NEEDLE);
 
     const lift = this.vario >= 0;
     const readings: Array<[number, string, string, string]> = [
