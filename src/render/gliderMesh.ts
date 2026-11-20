@@ -395,10 +395,10 @@ function createDashShape(): Shape {
 
   const shape = new Shape();
   shape.moveTo(-topHalf, topEdge);
-  // A straight, slightly narrower top rail with chamfered upper corners: the
-  // top reads as the top of a hexagon without losing the knee cut-outs.
+  // Keep the narrower top rail, but turn the upper sides into round
+  // shoulders rather than hard chamfers.
   shape.lineTo(topHalf, topEdge);
-  shape.lineTo(half, shoulderY);
+  shape.quadraticCurveTo(half, topEdge, half, shoulderY);
   shape.lineTo(half, sideBottom);
   shape.quadraticCurveTo(half, outerBottom, half - 0.012, outerBottom);
   shape.quadraticCurveTo(0.205, archPeak, archPeakX, archPeak);
@@ -412,7 +412,7 @@ function createDashShape(): Shape {
   shape.quadraticCurveTo(-0.205, archPeak, -half + 0.012, outerBottom);
   shape.quadraticCurveTo(-half, outerBottom, -half, sideBottom);
   shape.lineTo(-half, shoulderY);
-  shape.lineTo(-topHalf, topEdge);
+  shape.quadraticCurveTo(-half, topEdge, -topHalf, topEdge);
   shape.closePath();
   return shape;
 }
