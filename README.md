@@ -201,9 +201,11 @@ On the menu, **Enter** starts the selected flight.
 
 ![Cockpit view](docs/cockpit.jpg)
 
-`C` cycles chase → cockpit → orbit. From the pilot's seat the canopy glass is
-hidden, but the side rails, centre stick and centre console stay in view, with
-the nose below the panel giving the horizon reference; mouse-drag looks around.
+`C` cycles chase → cockpit → orbit. From the pilot's seat the canopy is a thin
+reflective inner shell with a front bow and glinting edges, so you are aware of
+the glass without it fogging the view. The side rails, centre stick and centre
+console stay in sight, with the nose below the panel giving the horizon
+reference; mouse-drag looks around.
 The dash is a moulded arch that sweeps down into deep knee cut-outs either side
 of the centre tunnel, and the flocked deck carries two dark footwells with baked
 contact shadows, so the cockpit reads as a shaded tub rather than a flat plate.

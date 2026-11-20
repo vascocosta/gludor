@@ -1,4 +1,5 @@
 import {
+  BackSide,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
@@ -13,6 +14,7 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
+  ShaderMaterial,
   Shape,
   SphereGeometry,
   SRGBColorSpace,
@@ -45,6 +47,50 @@ const WING_DIHEDRAL_SLOPE = (WING_TIP_Y - WING_ROOT_Y) / WING_SPAN;
 export const GLIDER_MODEL_DROP = 0.25;
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+
+/**
+ * Cockpit canopy glass. The camera sits inside the shell, so this is drawn as
+ * a back face with almost no tint head-on and a soft Fresnel reflection at the
+ * edges and over the top. A small sun glint gives it a surface without fogging
+ * the view.
+ */
+const COCKPIT_GLASS_VERTEX = /* glsl */ `
+  varying vec3 vViewPosition;
+  varying vec3 vViewNormal;
+
+  void main() {
+    vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+    vViewPosition = viewPosition.xyz;
+    vViewNormal = normalize(normalMatrix * normal);
+    gl_Position = projectionMatrix * viewPosition;
+  }
+`;
+
+const COCKPIT_GLASS_FRAGMENT = /* glsl */ `
+  uniform vec3 uSunDirection;
+  uniform vec3 uTint;
+  uniform vec3 uSunColor;
+
+  varying vec3 vViewPosition;
+  varying vec3 vViewNormal;
+
+  void main() {
+    vec3 viewDir = normalize(-vViewPosition);
+    vec3 normal = normalize(vViewNormal);
+    if (dot(normal, viewDir) < 0.0) normal = -normal;
+
+    float facing = clamp(dot(normal, viewDir), 0.0, 1.0);
+    float fresnel = pow(1.0 - facing, 2.4);
+
+    vec3 sunView = normalize((viewMatrix * vec4(uSunDirection, 0.0)).xyz);
+    vec3 reflection = reflect(-viewDir, normal);
+    float glint = pow(max(dot(reflection, sunView), 0.0), 64.0);
+
+    vec3 color = uTint + uSunColor * glint * 0.9;
+    float alpha = 0.025 + fresnel * 0.26 + glint * 0.3;
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.55));
+  }
+`;
 
 /** Height of the wing's reference surface at a spanwise station. */
 function wingSurfaceY(x: number): number {
@@ -978,6 +1024,8 @@ export class GliderMesh {
   private readonly elevator = new Group();
   private readonly rudder = new Group();
   private readonly canopy = new Group();
+  private readonly cockpitGlass = new Mesh();
+  private cockpitGlassMaterial: ShaderMaterial | null = null;
   private readonly flexParts: Array<{
     object: Group;
     x: number;
@@ -1294,6 +1342,16 @@ export class GliderMesh {
     sill.scale.set(0.64, 1.55, 1);
     canopyFrame.add(sill);
 
+    // Front canopy bow. It follows the dome cross-section at that station and
+    // gives the pilot a visible frame over the glass in cockpit view.
+    const bow = new Mesh(
+      new TorusGeometry(0.5, 0.012, 6, 36, Math.PI),
+      coamingMaterial,
+    );
+    bow.scale.set(0.63, 0.77, 1);
+    bow.position.set(0, 0, -0.08);
+    canopyFrame.add(bow);
+
     // Side rails run from behind the seat forward to meet the dash.
     for (const side of [1, -1]) {
       const rail = new Mesh(new BoxGeometry(0.016, 0.016, 1.66), coamingMaterial);
@@ -1303,6 +1361,39 @@ export class GliderMesh {
 
     this.body.add(canopyFrame);
     this.body.add(this.canopy);
+
+    // Inner glass for the cockpit camera. BackSide means we see the inside of
+    // the dome; the shader keeps the centre clear and only adds reflections
+    // where the surface turns away from the eye.
+    const cockpitGlassMaterial = new ShaderMaterial({
+      uniforms: {
+        uSunDirection: { value: new Vector3(0, 0.8, 0.6) },
+        uTint: { value: new Color(0x93b9cb) },
+        uSunColor: { value: new Color(0xfff1d5) },
+      },
+      vertexShader: COCKPIT_GLASS_VERTEX,
+      fragmentShader: COCKPIT_GLASS_FRAGMENT,
+      transparent: true,
+      side: BackSide,
+      depthWrite: false,
+      depthTest: true,
+    });
+    this.cockpitGlassMaterial = cockpitGlassMaterial;
+    this.cockpitGlass.geometry = new SphereGeometry(
+      0.5,
+      28,
+      16,
+      0,
+      Math.PI * 2,
+      0,
+      Math.PI / 2,
+    );
+    this.cockpitGlass.material = cockpitGlassMaterial;
+    this.cockpitGlass.scale.set(0.64, 0.78, 1.55);
+    this.cockpitGlass.position.set(0, 0.33, -0.92);
+    this.cockpitGlass.renderOrder = 4;
+    this.cockpitGlass.visible = false;
+    this.body.add(this.cockpitGlass);
 
     // Wing roots: a soft fairing hides the wing/fuselage intersection.
     for (const side of [1, -1]) {
@@ -1564,6 +1655,7 @@ export class GliderMesh {
     frame.add(this.body, this.wings, this.tail);
     this.group.add(frame);
     this.group.traverse((object) => {
+      if (object === this.cockpitGlass) return;
       if (object instanceof Mesh) {
         object.castShadow = true;
         object.receiveShadow = true;
@@ -1607,9 +1699,17 @@ export class GliderMesh {
   }
 
   setCockpitView(active: boolean): void {
-    // From the pilot's seat the canopy would sit in front of the camera; the
-    // cockpit tub and panel stay visible for a sense of sitting in the glider.
+    // Swap the outer glass for the interior shell so the pilot can see the
+    // canopy without the camera clipping through a tinted surface.
     this.cockpitView = active;
     this.canopy.visible = !active;
+    this.cockpitGlass.visible = active;
+  }
+
+  /** Keep the cockpit glass glint aligned with the scene sun. */
+  setSunDirection(direction: Vector3): void {
+    if (!this.cockpitGlassMaterial) return;
+    const uniform = this.cockpitGlassMaterial.uniforms.uSunDirection;
+    (uniform.value as Vector3).copy(direction);
   }
 }

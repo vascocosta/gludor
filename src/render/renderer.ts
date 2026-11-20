@@ -207,6 +207,7 @@ export class WorldRenderer {
       Math.sin(elevation),
       -Math.cos(azimuth) * Math.cos(elevation),
     );
+    this.glider.setSunDirection(this.sunDirection);
 
     const daylight = clamp(Math.sin(elevation), 0, 1);
     this.sun.color.copy(new Color(0xfff1d5)).lerp(new Color(0xff9d59), 1 - daylight);

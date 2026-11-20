@@ -338,7 +338,7 @@ export const FREE_CAMERA = {
  * to sit taller in the seat; `eyeForward` moves the eye fore/aft.
  */
 export const COCKPIT_VIEW = {
-  eyeHeight: 0.75,
+  eyeHeight: 0.6,
   eyeForward: -0.52,
 } as const;
 
