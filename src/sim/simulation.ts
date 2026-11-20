@@ -312,6 +312,15 @@ export class Simulation {
     )
       return;
 
+    // On the ground the wheel and friction own the motion. Running the full
+    // aero model here is both unnecessary and wrong: with a tailwind the
+    // airflow can run backwards over the wing, where the flight model would
+    // keep pushing the glider instead of letting it stop.
+    if (this.mode === "rollout") {
+      this.stepRollout(dt);
+      return;
+    }
+
     if (this.towPlane.visible) {
       this.atmosphere.steadyWindAt(this.towPlane.position.y, scratchTowWind);
       this.towPlane.update(dt, scratchTowWind.x, scratchTowWind.z);
@@ -346,7 +355,11 @@ export class Simulation {
     this.handleGround(dt);
     this.updateTelemetry(dt);
     this.updateMode();
+    this.advanceClock(dt);
+  }
 
+  /** Time and distance bookkeeping shared by the airborne and ground loops. */
+  private advanceClock(dt: number): void {
     this.time += dt;
     this.flightTime += dt;
     if (!this.airTimeFrozen) this.stats.airTime = this.flightTime;
@@ -618,15 +631,6 @@ export class Simulation {
 
     const floor = surface + CLEARANCE;
     if (this.position.y > floor) {
-      // Once the glider is rolling out the wheel stays down: a bump or a gust
-      // must not launch it back into the air.
-      if (this.mode === "rollout") {
-        this.position.y = floor;
-        this.onGround = true;
-        if (this.velocity.y > 0) this.velocity.y = 0;
-        this.updateRollout(dt);
-        return;
-      }
       this.onGround = false;
       return;
     }
@@ -678,7 +682,7 @@ export class Simulation {
     }
 
     if (this.mode === "rollout") {
-      this.updateRollout(dt);
+      // The rollout loop takes over on the next step.
       return;
     }
 
@@ -689,6 +693,62 @@ export class Simulation {
       this.velocity.x -= (this.velocity.x / horizontal) * decel;
       this.velocity.z -= (this.velocity.z / horizontal) * decel;
     }
+  }
+
+  /**
+   * Ground-only integration for the landing roll. It deliberately bypasses the
+   * aerodynamic force model: at low ground speed a tailwind can run backwards
+   * over the wing, where the flight model is not valid and would otherwise keep
+   * pushing the glider along instead of letting friction stop it.
+   */
+  private stepRollout(dt: number): void {
+    this.position.addScaledVector(this.velocity, dt);
+
+    const ground = this.terrain.heightAt(this.position.x, this.position.z);
+    const water = this.terrain.waterLevelAt(this.position.x, this.position.z);
+    const overWater = water !== null && water > ground;
+    const floorHeight = overWater ? (water as number) : ground;
+    const roof = buildingHeightAt(this.position.x, this.position.z);
+    const onBuilding = roof !== null && roof > floorHeight;
+    const surface = onBuilding ? (roof as number) : floorHeight;
+    this.overWater = overWater;
+
+    // The wheel stays planted however the terrain moves underneath it.
+    this.position.y = surface + CLEARANCE;
+    this.onGround = true;
+    this.velocity.y = 0;
+
+    if (onBuilding) {
+      this.mode = "crashed";
+      this.velocity.multiplyScalar(0.15);
+      this.showMessage("Struck a building - press R to restart", 6);
+    } else if (overWater) {
+      this.mode = "ditched";
+      this.velocity.multiplyScalar(0.35);
+      this.showMessage("Ditched - a soft splash. Press R to fly again", 7);
+    } else {
+      this.updateRollout(dt);
+    }
+
+    // Airspeed still drives the IAS readout and the wind audio, but no
+    // aerodynamic force is applied while the wheel carries the glider.
+    this.atmosphere.windAt(this.position, this.time, this.windScratch);
+    this.wind.copy(this.windScratch);
+    this.axes.fromQuaternion(this.orientation);
+    this.vAir.copy(this.velocity).sub(this.windScratch);
+    const density = this.atmosphere.densityAt(this.position.y);
+    computeAero(this.vAir, this.axes, density, this.controls, this.angular, GLIDER, this.aero);
+    this.aero.forceWorld.set(0, 0, 0);
+    this.aero.momentWorld.set(0, 0, 0);
+
+    this.updateTelemetry(dt);
+    // Ground contact, not flight, carries the weight.
+    this.alpha = 0;
+    this.beta = 0;
+    this.stall = 0;
+    this.gLoad = 1;
+
+    this.advanceClock(dt);
   }
 
   /** Ground roll after a safe landing: friction, brakes, steering and attitude. */

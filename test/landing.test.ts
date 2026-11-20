@@ -22,13 +22,18 @@ beforeAll(() => {
 });
 
 /** Put a free-flying glider on a shallow final approach over the flat field. */
-function startRollout(): Simulation {
-  const sim = new Simulation(terrain, stillAir);
-  sim.startFlight(stillAir, "air");
+function startRollout(weather: WeatherSettings = stillAir, heading = 0): Simulation {
+  const sim = new Simulation(terrain, weather);
+  sim.startFlight(weather, "air");
   const ground = terrain.heightAt(0, 0);
+  const radians = (heading * Math.PI) / 180;
   sim.position.set(0, ground + 1.2, 0);
-  sim.orientation.copy(quatFromHeadingPitchRoll(0, 0.08, 0));
-  sim.velocity.set(0, -1.5, -22);
+  sim.orientation.copy(quatFromHeadingPitchRoll(heading, 0.08, 0));
+  sim.velocity.set(
+    Math.sin(radians) * 22,
+    -1.5,
+    -Math.cos(radians) * 22,
+  );
   return sim;
 }
 
@@ -81,6 +86,23 @@ describe("landing rollout", () => {
     expect(Number.isFinite(elapsed)).toBe(true);
     expect(sim.velocity.length()).toBe(0);
     expect(sim.getSummary().mode).toBe("landed");
+  });
+
+  it("stops even when a tailwind runs backwards over the wing", () => {
+    // A strong tailwind makes the relative airflow reverse as the glider
+    // slows. The ground loop must not let the aero model keep it creeping.
+    const windy: WeatherSettings = {
+      ...stillAir,
+      windSpeed: 35,
+      windFrom: 270,
+      turbulence: 0,
+    };
+    const sim = startRollout(windy, 90);
+    const elapsed = stepUntil(sim, (s) => s.mode === "landed", 60);
+
+    expect(Number.isFinite(elapsed)).toBe(true);
+    expect(sim.velocity.length()).toBe(0);
+    expect(sim.ias).toBeLessThan(20);
   });
 
   it("uses the wheel brake to shorten the rollout", () => {
