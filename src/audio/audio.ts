@@ -14,7 +14,7 @@ const MUSIC_CHORDS = [
 ];
 /** D-minor pentatonic notes for the sparse bells. */
 const MUSIC_BELLS = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33];
-const MUSIC_LEVEL = 0.18;
+const MUSIC_LEVEL = 0.7;
 const MUSIC_CHORD_SECONDS = 9;
 
 /** Small WebAudio soundscape: wind, vario beeps, a stall horn and a thud. */
@@ -158,7 +158,7 @@ export class AudioEngine {
       const voiceGains = [0.34, 0.2, 0.16, 0.13];
       this.musicVoices = MUSIC_CHORDS[0].map((frequency, index) => {
         const oscillator = context.createOscillator();
-        oscillator.type = index === 0 ? "triangle" : "sine";
+        oscillator.type = "triangle";
         oscillator.frequency.value = frequency;
         oscillator.detune.value = (index - 1.5) * 5;
         const gain = context.createGain();
@@ -215,7 +215,7 @@ export class AudioEngine {
       this.musicGain.gain.setTargetAtTime(
         target,
         this.context.currentTime,
-        this.musicEnabled ? 1.2 : 0.45,
+        this.musicEnabled ? 0.35 : 0.45,
       );
     }
     return this.musicEnabled;
@@ -376,7 +376,7 @@ export class AudioEngine {
     oscillator.frequency.value = frequency;
     const gain = this.context.createGain();
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.09, now + 0.06);
+    gain.gain.exponentialRampToValueAtTime(0.13, now + 0.06);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 4.2);
     const panner = this.context.createStereoPanner();
     panner.pan.value = Math.random() * 1.6 - 0.8;
