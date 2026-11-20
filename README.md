@@ -47,7 +47,8 @@ snow-capped peaks holding the last light.*
   free camera (`V`) lets you inspect the terrain from the menu or mid-flight.
 - **Full flight loop.** Pause, restart, crash/ditching detection, a steerable
   landing roll with wheel brakes, a post-flight summary, procedural
-  wind/vario/stall audio, and a debug telemetry overlay.
+  wind/vario/stall audio, an optional ambient score, and a debug telemetry
+  overlay.
 
 V1 is deliberately solo: no tasks, scoring, multiplayer, wave, real DEM data,
 VR, or mobile touch controls.
@@ -168,6 +169,7 @@ npm run preview # serve the production build locally
 | `F3` | Debug telemetry overlay |
 | `F4` | Thermal helpers (particles and core cue) |
 | `M` | Mute audio |
+| `N` | Ambient music on / off (off by default) |
 
 On the menu, **Enter** starts the selected flight.
 
@@ -341,7 +343,8 @@ aerotow tug and its spinning propeller, and thermal particles. The HUD is a
 separate 2D canvas with vector-drawn instruments. Audio is synthesized with
 WebAudio: filtered wind noise scaled by IAS, vario lift beeps and a low sink
 tone, a stall horn, a landing thump, and a filtered engine drone while the tug
-is on the rope.
+is on the rope. An optional generative ambient score (`N`) adds a slow pad and
+sparse bells; it is off by default.
 
 ## Project layout
 

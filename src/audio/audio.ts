@@ -1,6 +1,22 @@
 import { clamp } from "../core/math";
 import type { Simulation } from "../sim/simulation";
 
+interface MusicVoice {
+  oscillator: OscillatorNode;
+}
+
+/** Slow four-note chords for the ambient bed. */
+const MUSIC_CHORDS = [
+  [146.83, 220.0, 293.66, 349.23], // D minor
+  [130.81, 196.0, 261.63, 329.63], // C major
+  [116.54, 174.61, 233.08, 293.66], // B-flat major
+  [110.0, 164.81, 220.0, 329.63], // A minor
+];
+/** D-minor pentatonic notes for the sparse bells. */
+const MUSIC_BELLS = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33];
+const MUSIC_LEVEL = 0.18;
+const MUSIC_CHORD_SECONDS = 9;
+
 /** Small WebAudio soundscape: wind, vario beeps, a stall horn and a thud. */
 export class AudioEngine {
   private context: AudioContext | null = null;
@@ -12,6 +28,13 @@ export class AudioEngine {
   private sinkGain: GainNode | null = null;
   private towOscillator: OscillatorNode | null = null;
   private towGain: GainNode | null = null;
+  private musicGain: GainNode | null = null;
+  private musicDelay: DelayNode | null = null;
+  private musicVoices: MusicVoice[] = [];
+  private musicEnabled = false;
+  private musicStep = 0;
+  private musicChordClock = 0;
+  private musicBellClock = 4;
   private noiseBuffer: AudioBuffer | null = null;
   private beepClock = 0;
   private muted = false;
@@ -109,6 +132,60 @@ export class AudioEngine {
       this.towOscillator = towOscillator;
       this.towGain = towGain;
 
+      // Optional ambient music: a slow pad plus sparse bells. It is built up
+      // front so toggling is just a gain change, and it stays off by default.
+      const musicGain = context.createGain();
+      musicGain.gain.value = this.musicEnabled ? MUSIC_LEVEL : 0;
+      musicGain.connect(master);
+      this.musicGain = musicGain;
+
+      const musicFilter = context.createBiquadFilter();
+      musicFilter.type = "lowpass";
+      musicFilter.frequency.value = 1100;
+      musicFilter.Q.value = 0.4;
+      musicFilter.connect(musicGain);
+
+      // A very slow filter drift keeps the pad from sounding static.
+      const lfo = context.createOscillator();
+      lfo.type = "sine";
+      lfo.frequency.value = 0.045;
+      const lfoDepth = context.createGain();
+      lfoDepth.gain.value = 320;
+      lfo.connect(lfoDepth);
+      lfoDepth.connect(musicFilter.frequency);
+      lfo.start();
+
+      const voiceGains = [0.34, 0.2, 0.16, 0.13];
+      this.musicVoices = MUSIC_CHORDS[0].map((frequency, index) => {
+        const oscillator = context.createOscillator();
+        oscillator.type = index === 0 ? "triangle" : "sine";
+        oscillator.frequency.value = frequency;
+        oscillator.detune.value = (index - 1.5) * 5;
+        const gain = context.createGain();
+        gain.gain.value = voiceGains[index] ?? 0.12;
+        const panner = context.createStereoPanner();
+        panner.pan.value = (index / (MUSIC_CHORDS[0].length - 1)) * 0.8 - 0.4;
+        oscillator.connect(gain);
+        gain.connect(panner);
+        panner.connect(musicFilter);
+        oscillator.start();
+        return { oscillator };
+      });
+
+      // A short feedback delay gives the bells a little room without needing
+      // an impulse response.
+      const musicDelay = context.createDelay(1);
+      musicDelay.delayTime.value = 0.42;
+      const feedback = context.createGain();
+      feedback.gain.value = 0.25;
+      const wet = context.createGain();
+      wet.gain.value = 0.5;
+      musicDelay.connect(feedback);
+      feedback.connect(musicDelay);
+      musicDelay.connect(wet);
+      wet.connect(musicGain);
+      this.musicDelay = musicDelay;
+
       this.active = true;
     } catch {
       this.context = null;
@@ -117,12 +194,31 @@ export class AudioEngine {
 
   setActive(active: boolean): void {
     this.active = active;
+    const now = this.context?.currentTime ?? 0;
     if (!active) {
-      this.windGain?.gain.setTargetAtTime(0, this.context?.currentTime ?? 0, 0.15);
-      this.stallGain?.gain.setTargetAtTime(0, this.context?.currentTime ?? 0, 0.08);
-      this.sinkGain?.gain.setTargetAtTime(0, this.context?.currentTime ?? 0, 0.08);
-      this.towGain?.gain.setTargetAtTime(0, this.context?.currentTime ?? 0, 0.2);
+      this.windGain?.gain.setTargetAtTime(0, now, 0.15);
+      this.stallGain?.gain.setTargetAtTime(0, now, 0.08);
+      this.sinkGain?.gain.setTargetAtTime(0, now, 0.08);
+      this.towGain?.gain.setTargetAtTime(0, now, 0.2);
     }
+    if (this.musicGain) {
+      const target = active && this.musicEnabled ? MUSIC_LEVEL : 0;
+      this.musicGain.gain.setTargetAtTime(target, now, active ? 1.4 : 0.4);
+    }
+  }
+
+  /** Toggle the ambient score. Off by default and independent of the mix mute. */
+  toggleMusic(): boolean {
+    this.musicEnabled = !this.musicEnabled;
+    if (this.context && this.musicGain) {
+      const target = this.musicEnabled && this.active ? MUSIC_LEVEL : 0;
+      this.musicGain.gain.setTargetAtTime(
+        target,
+        this.context.currentTime,
+        this.musicEnabled ? 1.2 : 0.45,
+      );
+    }
+    return this.musicEnabled;
   }
 
   toggleMute(): boolean {
@@ -140,6 +236,7 @@ export class AudioEngine {
   update(sim: Simulation, dt: number): void {
     if (!this.context || !this.active || this.muted) return;
     const now = this.context.currentTime;
+    if (this.musicEnabled) this.updateMusic(dt);
 
     if (this.windGain && this.windFilter) {
       const airspeed = sim.ias;
@@ -244,6 +341,51 @@ export class AudioEngine {
     gain.connect(this.master);
     oscillator.start(now);
     oscillator.stop(now + 0.36);
+  }
+
+  /** Advance the ambient score: slow chord changes and occasional bells. */
+  private updateMusic(dt: number): void {
+    if (!this.context || !this.musicGain) return;
+
+    this.musicChordClock += dt;
+    if (this.musicChordClock >= MUSIC_CHORD_SECONDS) {
+      this.musicChordClock -= MUSIC_CHORD_SECONDS;
+      this.musicStep = (this.musicStep + 1) % MUSIC_CHORDS.length;
+      const now = this.context.currentTime;
+      const chord = MUSIC_CHORDS[this.musicStep];
+      for (let i = 0; i < this.musicVoices.length; i++) {
+        const frequency = chord[i] ?? chord[0];
+        // Glide into the next chord rather than stepping to it.
+        this.musicVoices[i].oscillator.frequency.setTargetAtTime(frequency, now, 1.6);
+      }
+    }
+
+    this.musicBellClock -= dt;
+    if (this.musicBellClock <= 0) {
+      this.musicBellClock = 6 + Math.random() * 7;
+      const frequency = MUSIC_BELLS[Math.floor(Math.random() * MUSIC_BELLS.length)];
+      this.musicBell(frequency);
+    }
+  }
+
+  private musicBell(frequency: number): void {
+    if (!this.context || !this.musicGain) return;
+    const now = this.context.currentTime;
+    const oscillator = this.context.createOscillator();
+    oscillator.type = "sine";
+    oscillator.frequency.value = frequency;
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.09, now + 0.06);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 4.2);
+    const panner = this.context.createStereoPanner();
+    panner.pan.value = Math.random() * 1.6 - 0.8;
+    oscillator.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.musicGain);
+    if (this.musicDelay) panner.connect(this.musicDelay);
+    oscillator.start(now);
+    oscillator.stop(now + 4.4);
   }
 
   private beep(frequency: number, duration: number, volume: number): void {

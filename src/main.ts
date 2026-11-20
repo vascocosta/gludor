@@ -224,6 +224,14 @@ function handleHotkeys(): void {
     simulation.showMessage(muted ? "Audio muted" : "Audio on", 1.6);
   }
 
+  if (
+    keyboard.consume("KeyN") &&
+    (appState === "flying" || appState === "paused")
+  ) {
+    const music = audio.toggleMusic();
+    simulation.showMessage(music ? "Ambient music on" : "Ambient music off", 1.8);
+  }
+
   if (keyboard.consume("F2") && appState !== "menu") {
     simulation.toggleAssist();
   }
