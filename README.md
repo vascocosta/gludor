@@ -156,6 +156,7 @@ npm run preview # serve the production build locally
 | `T` / `G` | Trim nose up / nose down |
 | `Space` | Release the winch cable or tow rope |
 | `C` | Cycle chase / cockpit / orbit view |
+| `Z` / `X` | Toggle looking left / right in cockpit view |
 | `V` | Toggle the free inspection camera |
 | Mouse drag | Look around in cockpit, orbit, and free camera |
 | `W` `A` `S` `D` | Move in the free camera |
@@ -205,7 +206,8 @@ On the menu, **Enter** starts the selected flight.
 reflective inner shell with a front bow and glinting edges, so you are aware of
 the glass without it fogging the view. The side rails, centre stick and centre
 console stay in sight, with the nose below the panel giving the horizon
-reference; mouse-drag looks around.
+reference; mouse-drag looks around, and `Z` / `X` toggle a shoulder check to the
+left or right.
 The dash is a moulded arch that sweeps down into deep knee cut-outs either side
 of the centre tunnel, and the flocked deck carries two dark footwells with baked
 contact shadows, so the cockpit reads as a shaded tub rather than a flat plate.

@@ -215,6 +215,17 @@ function handleHotkeys(): void {
     simulation.showMessage(`Camera: ${mode}`, 1.6);
   }
 
+  if (appState === "flying" || appState === "paused") {
+    if (keyboard.consume("KeyZ")) {
+      const look = renderer.toggleLook(-1);
+      if (look) simulation.showMessage(`Looking ${look}`, 1.2);
+    }
+    if (keyboard.consume("KeyX")) {
+      const look = renderer.toggleLook(1);
+      if (look) simulation.showMessage(`Looking ${look}`, 1.2);
+    }
+  }
+
   if (keyboard.consume("KeyR") && appState !== "menu") {
     restartFlight();
   }

@@ -167,7 +167,7 @@ export class Hud {
         ? "Q/E steer   B wheel brake   R restart   C camera   V inspect   F1 help   ESC menu"
         : sim.mode === "landed"
           ? "Landed - R restart   C camera   V inspect   F1 help   ESC menu"
-          : "SPACE release   B airbrakes   T/G trim   C camera   V inspect   F1 help   ESC menu";
+          : "SPACE release   B airbrakes   T/G trim   C camera   Z/X look   V inspect   F1 help   ESC menu";
     ctx.fillText(hint, 22, this.height - 16);
   }
 

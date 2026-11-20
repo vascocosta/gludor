@@ -38,8 +38,7 @@ import { WaterField } from "./water";
  * tone-mapping and colour-space chunks, so the fog colour has to be the
  * tone-mapped version of the horizon colour to match the sky.
  */
-function toneMapped(color: Color, exposure: number, out: Color): Color {
-  const s = exposure / 0.6;
+function toneMapped(color: Color, exposure: number, out: Color): Color {  const s = exposure / 0.6;
   const r = color.r * s;
   const g = color.g * s;
   const b = color.b * s;
@@ -64,6 +63,9 @@ function toneMapped(color: Color, exposure: number, out: Color): Color {
   );
 }
 
+/** Shoulder-check angle used by the cockpit look toggles. */
+const LOOK_SIDE_YAW = 80 * DEG;
+
 export class WorldRenderer {
   readonly renderer: WebGLRenderer;
   readonly scene = new Scene();
@@ -84,6 +86,8 @@ export class WorldRenderer {
   orbitDistance = 18;
   lookYaw = 0;
   lookPitch = 0;
+  private lookTargetYaw = 0;
+  private lookSide: -1 | 0 | 1 = 0;
   /** True while the detached inspection camera is driving the view. */
   freeCamera = false;
 
@@ -290,7 +294,27 @@ export class WorldRenderer {
   resetLook(): void {
     this.lookYaw = 0;
     this.lookPitch = 0;
+    this.lookTargetYaw = 0;
+    this.lookSide = 0;
     if (this.freeCamera) this.freePitch = 0;
+  }
+
+  /**
+   * Toggle a shoulder check in the cockpit. Pressing the same side again
+   * returns to forward; pressing the other side switches across.
+   */
+  toggleLook(side: -1 | 1): "left" | "right" | "forward" | null {
+    if (this.freeCamera || this.cameraMode !== "cockpit") return null;
+
+    if (this.lookSide === side) {
+      this.lookSide = 0;
+      this.lookTargetYaw = 0;
+    } else {
+      this.lookSide = side;
+      this.lookTargetYaw = side < 0 ? LOOK_SIDE_YAW : -LOOK_SIDE_YAW;
+    }
+
+    return this.lookSide === 0 ? "forward" : this.lookSide < 0 ? "left" : "right";
   }
 
   dragLook(dx: number, dy: number): void {
@@ -300,6 +324,8 @@ export class WorldRenderer {
     } else if (this.cameraMode === "cockpit") {
       this.lookYaw -= dx * 0.004;
       this.lookPitch = clamp(this.lookPitch - dy * 0.003, -0.9, 0.9);
+      this.lookTargetYaw = this.lookYaw;
+      this.lookSide = 0;
     } else if (this.cameraMode === "orbit") {
       this.orbitYaw -= dx * 0.006;
       this.orbitPitch = clamp(this.orbitPitch + dy * 0.004, -0.15, 1.25);
@@ -427,6 +453,15 @@ export class WorldRenderer {
     return roof !== null && roof > ground ? roof : ground;
   }
 
+  private updateLook(dt: number): void {
+    if (Math.abs(this.lookYaw - this.lookTargetYaw) < 0.0005) {
+      this.lookYaw = this.lookTargetYaw;
+      return;
+    }
+    this.lookYaw +=
+      (this.lookTargetYaw - this.lookYaw) * (1 - Math.exp(-dt / 0.13));
+  }
+
   private updateCamera(sim: Simulation, dt: number, menu: boolean): void {
     if (this.freeCamera) {
       this.camera.quaternion.copy(lookQuaternion(this.freeYaw, this.freePitch));
@@ -464,6 +499,7 @@ export class WorldRenderer {
       ).applyQuaternion(sim.orientation);
       this.camera.position.copy(sim.position).add(eye);
 
+      this.updateLook(dt);
       lookQuaternion(this.lookYaw, this.lookPitch, this.lookOffset);
       this.camera.quaternion.copy(sim.orientation).multiply(this.lookOffset);
 
