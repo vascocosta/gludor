@@ -631,16 +631,17 @@ const IAS_SCALE = 200; // km/h at full deflection
 const ALT_SCALE = 1000; // metres per needle revolution
 const VARIO_SCALE = 5; // m/s at either end
 
-const AMBER = "#d0862f";
-const GREEN = "#3fae62";
-/** Dark instrument face with white markings, like a real glider panel. */
-const DIAL_FACE_INNER = "#3c4147";
+/** Same face and marking palette as the HUD cluster. */
+const DIAL_FACE_INNER = "#3b4045";
+const DIAL_FACE_MID = "#2d3237";
 const DIAL_FACE_OUTER = "#22262a";
+const DIAL_BORDER = "rgba(205, 225, 232, 0.28)";
 const DIAL_MARK = "#eef2f4";
 const DIAL_MARK_DIM = "rgba(235, 242, 245, 0.55)";
 const DIAL_NUMBER = "#d8e2e6";
 const DIAL_LABEL = "#e9eef1";
-const NEEDLE = "#f5f7f8";
+const DIAL_UNIT = "rgba(205, 218, 223, 0.72)";
+const NEEDLE = "#f7fbff";
 /** The HUD cluster uses a 50 px gauge radius; scale its line weights to the panel. */
 const HUD_GAUGE_RADIUS = 50;
 
@@ -648,74 +649,174 @@ function dialAngle(fraction: number): number {
   return DIAL_START + DIAL_SWEEP * clamp01(fraction);
 }
 
-/** One dial face: bezel, pressed-paper face, ticks, numbers, and label. */
-function paintDial(
+/** One dial face, drawn with the HUD cluster's exact style and proportions. */
+function paintGaugeFace(
   context: CanvasRenderingContext2D,
   cx: number,
-  label: string,
-  values: number[],
-  format: (value: number) => string,
+  cy: number,
+  radius: number,
+  title: string,
+  unit: string,
 ): void {
-  const cy = DIAL_CY;
-  const radius = DIAL_RADIUS;
+  const scale = radius / HUD_GAUGE_RADIUS;
 
-  context.beginPath();
-  context.arc(cx, cy, radius + 8, 0, Math.PI * 2);
-  context.fillStyle = "#8a9299";
-  context.fill();
-
-  // A slightly lifted dark grey face with a soft vignette. It reads as black
-  // against a dark cockpit but keeps enough contrast for the white markings.
   const face = context.createRadialGradient(
     cx,
-    cy - radius * 0.28,
+    cy - radius * 0.25,
     radius * 0.08,
     cx,
     cy,
     radius,
   );
   face.addColorStop(0, DIAL_FACE_INNER);
-  face.addColorStop(0.68, "#2f3439");
+  face.addColorStop(0.7, DIAL_FACE_MID);
   face.addColorStop(1, DIAL_FACE_OUTER);
   context.beginPath();
   context.arc(cx, cy, radius, 0, Math.PI * 2);
   context.fillStyle = face;
   context.fill();
-  context.strokeStyle = "#101315";
-  context.lineWidth = 3;
+  context.strokeStyle = DIAL_BORDER;
+  context.lineWidth = 1.5 * scale;
   context.stroke();
 
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.fillStyle = DIAL_NUMBER;
-  context.font = "400 18px ui-monospace, SFMono-Regular, Menlo, monospace";
-  for (let i = 0; i < values.length; i++) {
-    const angle = dialAngle(i / (values.length - 1));
-    context.fillText(
-      format(values[i]),
-      cx + Math.cos(angle) * radius * 0.6,
-      cy + Math.sin(angle) * radius * 0.6,
-    );
-  }
-
-  // Minor ticks every 5% of the sweep, longer ticks every 25%. Match the HUD's
-  // thin, round-capped marks rather than heavier mechanical engraving.
-  context.lineCap = "round";
-  for (let i = 0; i <= 20; i++) {
-    const angle = dialAngle(i / 20);
-    const major = i % 5 === 0;
-    const inner = radius * (major ? 0.77 : 0.85);
-    context.beginPath();
-    context.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
-    context.lineTo(cx + Math.cos(angle) * radius * 0.93, cy + Math.sin(angle) * radius * 0.93);
-    context.lineWidth = 3;
-    context.strokeStyle = major ? DIAL_MARK : DIAL_MARK_DIM;
-    context.stroke();
-  }
-
-  context.font = "600 18px ui-monospace, SFMono-Regular, Menlo, monospace";
   context.fillStyle = DIAL_LABEL;
-  context.fillText(label, cx, cy + radius * 0.3);
+  context.font = `600 ${9 * scale}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  context.fillText(title, cx, cy - radius + 14 * scale);
+  context.fillStyle = DIAL_UNIT;
+  context.fillText(unit, cx, cy + radius - 8 * scale);
+}
+
+function paintGaugeTick(
+  context: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+  angle: number,
+  length: number,
+  color: string,
+): void {
+  const scale = radius / HUD_GAUGE_RADIUS;
+  const outer = radius - 4 * scale;
+  const inner = outer - length * scale;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  context.strokeStyle = color;
+  context.lineWidth = 1.5 * scale;
+  context.lineCap = "butt";
+  context.beginPath();
+  context.moveTo(cx + cos * outer, cy + sin * outer);
+  context.lineTo(cx + cos * inner, cy + sin * inner);
+  context.stroke();
+}
+
+function paintGaugeLabel(
+  context: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+  angle: number,
+  text: string,
+  size: number,
+  color: string,
+): void {
+  const scale = radius / HUD_GAUGE_RADIUS;
+  const labelRadius = radius - 20 * scale;
+  context.fillStyle = color;
+  context.font = `${size * scale}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(
+    text,
+    cx + Math.cos(angle) * labelRadius,
+    cy + Math.sin(angle) * labelRadius,
+  );
+}
+
+function paintAirspeedDial(
+  context: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+): void {
+  paintGaugeFace(context, cx, cy, radius, "IAS", "km/h");
+
+  for (let i = 0; i <= 10; i++) {
+    const angle = dialAngle(i / 10);
+    const major = i % 2 === 0;
+    paintGaugeTick(
+      context,
+      cx,
+      cy,
+      radius,
+      angle,
+      major ? 8 : 4,
+      major ? DIAL_MARK : DIAL_MARK_DIM,
+    );
+    if (major) {
+      paintGaugeLabel(context, cx, cy, radius, angle, `${i * 20}`, 9, DIAL_NUMBER);
+    }
+  }
+}
+
+function paintAltimeterDial(
+  context: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+): void {
+  paintGaugeFace(context, cx, cy, radius, "ALT", "m");
+
+  const start = -Math.PI / 2;
+  for (let i = 0; i < 10; i++) {
+    const angle = start + (i / 10) * Math.PI * 2;
+    paintGaugeTick(context, cx, cy, radius, angle, 8, DIAL_MARK);
+    paintGaugeLabel(context, cx, cy, radius, angle, `${i}`, 9, DIAL_NUMBER);
+  }
+}
+
+function paintVarioDial(
+  context: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+): void {
+  paintGaugeFace(context, cx, cy, radius, "VARIO", "m/s");
+
+  const scale = radius / HUD_GAUGE_RADIUS;
+  const start = DIAL_START;
+  const sweep = DIAL_SWEEP;
+  const bandRadius = radius - 6 * scale;
+
+  context.save();
+  context.lineWidth = 6 * scale;
+  context.strokeStyle = "rgba(125, 223, 149, 0.28)";
+  context.beginPath();
+  context.arc(cx, cy, bandRadius, start + sweep * 0.5, start + sweep);
+  context.stroke();
+  context.strokeStyle = "rgba(240, 180, 90, 0.22)";
+  context.beginPath();
+  context.arc(cx, cy, bandRadius, start, start + sweep * 0.5);
+  context.stroke();
+  context.restore();
+
+  for (let i = 0; i <= 10; i++) {
+    const angle = dialAngle(i / 10);
+    const major = i % 2 === 0;
+    paintGaugeTick(
+      context,
+      cx,
+      cy,
+      radius,
+      angle,
+      major ? 8 : 4,
+      major ? DIAL_MARK : DIAL_MARK_DIM,
+    );
+    if (major) {
+      paintGaugeLabel(context, cx, cy, radius, angle, `${i - 5}`, 9, DIAL_NUMBER);
+    }
+  }
 }
 
 function paintPanelBackground(context: CanvasRenderingContext2D): void {
@@ -751,24 +852,9 @@ function paintPanelBackground(context: CanvasRenderingContext2D): void {
     context.fillRect(flip ? PANEL_WIDTH - 46 : 7, 7, 39, PANEL_HEIGHT - 14);
   }
 
-  paintDial(context, DIAL_CENTRES[0], "IAS", [0, 50, 100, 150, 200], (v) => `${v}`);
-  paintDial(context, DIAL_CENTRES[1], "ALT", [0, 250, 500, 750, 1000], (v) => `${v}`);
-  paintDial(context, DIAL_CENTRES[2], "VARIO", [-5, -2.5, 0, 2.5, 5], (v) =>
-    v > 0 ? `+${v}` : `${v}`,
-  );
-
-  // Sink and lift bands around the vario face, just inside the bezel.
-  const vario = DIAL_CENTRES[2];
-  const band = DIAL_RADIUS * 0.97;
-  context.lineWidth = 5;
-  context.strokeStyle = AMBER;
-  context.beginPath();
-  context.arc(vario, DIAL_CY, band, dialAngle(0), dialAngle(0.5));
-  context.stroke();
-  context.strokeStyle = GREEN;
-  context.beginPath();
-  context.arc(vario, DIAL_CY, band, dialAngle(0.5), dialAngle(1));
-  context.stroke();
+  paintAirspeedDial(context, DIAL_CENTRES[0], DIAL_CY, DIAL_RADIUS);
+  paintAltimeterDial(context, DIAL_CENTRES[1], DIAL_CY, DIAL_RADIUS);
+  paintVarioDial(context, DIAL_CENTRES[2], DIAL_CY, DIAL_RADIUS);
 
   // Recessed digital readouts under each dial.
   for (const cx of DIAL_CENTRES) {
@@ -961,6 +1047,7 @@ class PanelInstruments {
     drawNeedle(context, DIAL_CENTRES[0], this.iasFraction, NEEDLE);
     drawNeedle(context, DIAL_CENTRES[1], this.altFraction, NEEDLE);
     drawNeedle(context, DIAL_CENTRES[2], this.varioFraction, NEEDLE);
+    this.drawInnerReadings(context);
     this.drawReadings(context);
 
     // The emissive map is a separate layer: only the round dials and their
@@ -980,10 +1067,36 @@ class PanelInstruments {
     drawNeedle(glow, DIAL_CENTRES[1], this.altFraction, NEEDLE);
     drawNeedle(glow, DIAL_CENTRES[2], this.varioFraction, NEEDLE);
     glow.restore();
+    this.drawInnerReadings(glow);
     this.drawReadings(glow);
 
     this.texture.needsUpdate = true;
     this.glowTexture.needsUpdate = true;
+  }
+
+  /** The small live values shown inside the ALT and VARIO faces, as on the HUD. */
+  private drawInnerReadings(context: CanvasRenderingContext2D): void {
+    const scale = DIAL_RADIUS / HUD_GAUGE_RADIUS;
+    const valueY = DIAL_CY + DIAL_RADIUS - 18 * scale;
+
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.font = `700 ${12 * scale}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    context.fillStyle = "#e8f4f7";
+    context.fillText(
+      `${Math.round(Math.max(0, this.altitude))}`,
+      DIAL_CENTRES[1],
+      valueY,
+    );
+
+    const lift = this.vario >= 0;
+    context.font = `700 ${13 * scale}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    context.fillStyle = lift ? "#7ddf95" : "#f0b45a";
+    context.fillText(
+      `${lift ? "+" : ""}${this.vario.toFixed(1)}`,
+      DIAL_CENTRES[2],
+      valueY,
+    );
   }
 
   private drawReadings(context: CanvasRenderingContext2D): void {
