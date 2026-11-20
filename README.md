@@ -8,10 +8,10 @@ Gludor is a solo free-flight sim with a fictional 15 m single-seater, the
 hand-written 6DOF flight model and seeded procedural weather. There are no
 external models or textures, no game engine, and no physics library.
 
-![Gludor in flight](docs/screenshot.jpg)
+![Aerotow at sunset](docs/aerotow-sunset.jpg)
 
-*A standard soaring day: open farmland, scattered cumulus, and soft cloud
-shadows, with no edge to the world.*
+*Golden hour on the wire: the GD-81 follows the tug over farmland, with
+snow-capped peaks holding the last light.*
 
 ## What is in V1
 
