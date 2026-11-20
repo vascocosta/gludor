@@ -819,6 +819,27 @@ function paintVarioDial(
   }
 }
 
+/** Ergonomic centre-stick grip: a waisted, closed lathe with finger swells. */
+function createStickGripGeometry(): LatheGeometry {
+  const points = [
+    new Vector2(0, -0.04),
+    new Vector2(0.01, -0.04),
+    new Vector2(0.013, -0.035),
+    new Vector2(0.015, -0.028),
+    new Vector2(0.0155, -0.02),
+    new Vector2(0.014, -0.012),
+    new Vector2(0.0155, -0.004),
+    new Vector2(0.014, 0.004),
+    new Vector2(0.0155, 0.012),
+    new Vector2(0.0145, 0.02),
+    new Vector2(0.014, 0.028),
+    new Vector2(0.012, 0.036),
+    new Vector2(0.008, 0.042),
+    new Vector2(0, 0.045),
+  ];
+  return new LatheGeometry(points, 24);
+}
+
 function paintPanelBackground(context: CanvasRenderingContext2D): void {
   const background = context.createLinearGradient(0, 0, 0, PANEL_HEIGHT);
   background.addColorStop(0, "#2b3239");
@@ -1232,6 +1253,16 @@ export class GliderMesh {
       roughness: 0.5,
       metalness: 0.1,
     });
+    const gripMaterial = new MeshStandardMaterial({
+      color: 0x252a31,
+      roughness: 0.8,
+      metalness: 0.04,
+    });
+    const radioMaterial = new MeshStandardMaterial({
+      color: 0xb54136,
+      roughness: 0.4,
+      metalness: 0.05,
+    });
     const glassMaterial = new MeshStandardMaterial({
       color: 0xa8d6e6,
       transparent: true,
@@ -1365,18 +1396,54 @@ export class GliderMesh {
     stickBoot.position.set(0, 0.414, -0.9);
     this.body.add(stickBoot);
 
-    const stick = new Mesh(new CylinderGeometry(0.007, 0.009, 0.06, 8), darkMaterial);
+    const stick = new Mesh(new CylinderGeometry(0.007, 0.009, 0.06, 12), darkMaterial);
     stick.position.set(0, 0.445, -0.9);
     this.body.add(stick);
 
-    const grip = new Mesh(new CylinderGeometry(0.016, 0.018, 0.05, 12), darkMaterial);
-    grip.position.set(0, 0.4875, -0.902);
-    grip.rotation.x = 0.14;
-    this.body.add(grip);
+    // Shaped rubber grip with finger swells and a red radio/PTT button on top.
+    const gripGroup = new Group();
+    gripGroup.position.set(0, 0.49, -0.9);
+    gripGroup.rotation.x = 0.14;
+    this.body.add(gripGroup);
 
-    const gripTop = new Mesh(new SphereGeometry(0.016, 12, 8), darkMaterial);
-    gripTop.position.set(0, 0.511, -0.906);
-    this.body.add(gripTop);
+    const grip = new Mesh(createStickGripGeometry(), gripMaterial);
+    grip.scale.set(0.95, 1, 1.15);
+    gripGroup.add(grip);
+
+    for (const y of [-0.028, -0.016, -0.004]) {
+      const ridge = new Mesh(new TorusGeometry(0.0163, 0.001, 6, 20), darkMaterial);
+      ridge.rotation.x = Math.PI / 2;
+      ridge.position.set(0, y, 0);
+      ridge.scale.set(0.95, 1.15, 1);
+      gripGroup.add(ridge);
+    }
+
+    const gripCollar = new Mesh(
+      new CylinderGeometry(0.0125, 0.0135, 0.006, 16),
+      metalMaterial,
+    );
+    gripCollar.position.set(0, -0.038, 0);
+    gripCollar.scale.set(0.95, 1, 1.15);
+    gripGroup.add(gripCollar);
+
+    const radioBezel = new Mesh(
+      new CylinderGeometry(0.0055, 0.0055, 0.002, 16),
+      metalMaterial,
+    );
+    radioBezel.position.set(0, 0.0445, 0);
+    gripGroup.add(radioBezel);
+
+    const radioButton = new Mesh(
+      new CylinderGeometry(0.0038, 0.004, 0.003, 16),
+      radioMaterial,
+    );
+    radioButton.position.set(0, 0.0465, 0);
+    gripGroup.add(radioButton);
+
+    const radioCap = new Mesh(new SphereGeometry(0.0038, 12, 8), radioMaterial);
+    radioCap.scale.set(1, 0.45, 1);
+    radioCap.position.set(0, 0.048, 0);
+    gripGroup.add(radioCap);
 
     const seat = new Mesh(new BoxGeometry(0.3, 0.22, 0.07), interiorMaterial);
     seat.position.set(0, 0.2, 0.04);
