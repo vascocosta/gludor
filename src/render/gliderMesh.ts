@@ -1047,7 +1047,6 @@ class PanelInstruments {
     drawNeedle(context, DIAL_CENTRES[0], this.iasFraction, NEEDLE);
     drawNeedle(context, DIAL_CENTRES[1], this.altFraction, NEEDLE);
     drawNeedle(context, DIAL_CENTRES[2], this.varioFraction, NEEDLE);
-    this.drawInnerReadings(context);
     this.drawReadings(context);
 
     // The emissive map is a separate layer: only the round dials and their
@@ -1067,36 +1066,10 @@ class PanelInstruments {
     drawNeedle(glow, DIAL_CENTRES[1], this.altFraction, NEEDLE);
     drawNeedle(glow, DIAL_CENTRES[2], this.varioFraction, NEEDLE);
     glow.restore();
-    this.drawInnerReadings(glow);
     this.drawReadings(glow);
 
     this.texture.needsUpdate = true;
     this.glowTexture.needsUpdate = true;
-  }
-
-  /** The small live values shown inside the ALT and VARIO faces, as on the HUD. */
-  private drawInnerReadings(context: CanvasRenderingContext2D): void {
-    const scale = DIAL_RADIUS / HUD_GAUGE_RADIUS;
-    const valueY = DIAL_CY + DIAL_RADIUS - 18 * scale;
-
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.font = `700 ${12 * scale}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-    context.fillStyle = "#e8f4f7";
-    context.fillText(
-      `${Math.round(Math.max(0, this.altitude))}`,
-      DIAL_CENTRES[1],
-      valueY,
-    );
-
-    const lift = this.vario >= 0;
-    context.font = `700 ${13 * scale}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-    context.fillStyle = lift ? "#7ddf95" : "#f0b45a";
-    context.fillText(
-      `${lift ? "+" : ""}${this.vario.toFixed(1)}`,
-      DIAL_CENTRES[2],
-      valueY,
-    );
   }
 
   private drawReadings(context: CanvasRenderingContext2D): void {

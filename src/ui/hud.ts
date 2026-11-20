@@ -183,7 +183,51 @@ export class Hud {
     this.drawAirspeed(x + 86, gaugeY, r, sim.ias * 3.6);
     this.drawAltimeter(x + 214, gaugeY, r, sim.msl);
     this.drawVario(x + 342, gaugeY, r, sim.varioTE);
+    this.drawReadouts(x, y, sim);
     this.drawInfo(x + 420, y + 18, panelHeight - 36, sim);
+  }
+
+  /** Three recessed digital readouts below the dials, matching the cockpit dash. */
+  private drawReadouts(x: number, y: number, sim: Simulation): void {
+    const ctx = this.ctx;
+    const boxY = y + 130;
+    const boxH = 20;
+    const boxW = 108;
+    const centres = [x + 86, x + 214, x + 342];
+    const readings: Array<[string, string, string]> = [
+      [`${(sim.ias * 3.6).toFixed(0)}`, "km/h", "#e8f4f7"],
+      [`${sim.msl.toFixed(0)}`, "m", "#e8f4f7"],
+      [
+        `${sim.varioTE >= 0 ? "+" : ""}${sim.varioTE.toFixed(1)}`,
+        "m/s",
+        sim.varioTE >= 0 ? GREEN : AMBER,
+      ],
+    ];
+
+    for (let i = 0; i < centres.length; i++) {
+      const cx = centres[i];
+      const [value, unit, color] = readings[i];
+      this.roundRect(
+        cx - boxW / 2,
+        boxY,
+        boxW,
+        boxH,
+        5,
+        "rgba(18, 23, 27, 0.92)",
+        "rgba(205, 225, 232, 0.18)",
+      );
+      ctx.save();
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "right";
+      ctx.fillStyle = color;
+      ctx.font = "700 12px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillText(value, cx - 4, boxY + boxH / 2 + 0.5);
+      ctx.textAlign = "left";
+      ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillStyle = "rgba(205, 218, 223, 0.62)";
+      ctx.fillText(unit, cx + 2, boxY + boxH / 2 + 0.5);
+      ctx.restore();
+    }
   }
 
   private drawInfo(x: number, y: number, h: number, sim: Simulation): void {
@@ -252,7 +296,6 @@ export class Hud {
   }
 
   private drawAltimeter(x: number, y: number, r: number, altitude: number): void {
-    const ctx = this.ctx;
     this.gaugeFace(x, y, r, "ALT", "m");
     const start = -Math.PI / 2;
     for (let i = 0; i < 10; i++) {
@@ -262,14 +305,6 @@ export class Hud {
     }
     const remainder = ((altitude % 1000) + 1000) % 1000;
     this.needle(x, y, r - 13, start + (remainder / 1000) * Math.PI * 2, "#f7fbff");
-
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#e8f4f7";
-    ctx.font = "700 12px ui-monospace, SFMono-Regular, Menlo, monospace";
-    ctx.fillText(altitude.toFixed(0), x, y + r - 18);
-    ctx.restore();
   }
 
   private drawVario(x: number, y: number, r: number, value: number): void {
@@ -300,15 +335,7 @@ export class Hud {
       }
     }
     const needle = start + clamp((value + 5) / 10, 0, 1) * sweep;
-    this.needle(x, y, r - 13, needle, "#f5f7f8");
-
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = value >= 0 ? GREEN : AMBER;
-    ctx.font = "700 13px ui-monospace, SFMono-Regular, Menlo, monospace";
-    ctx.fillText(`${value >= 0 ? "+" : ""}${value.toFixed(1)}`, x, y + r - 18);
-    ctx.restore();
+    this.needle(x, y, r - 13, needle, "#f7fbff");
   }
 
   private gaugeFace(x: number, y: number, r: number, title: string, unit: string): void {
