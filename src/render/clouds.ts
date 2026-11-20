@@ -423,8 +423,8 @@ export class CloudField {
           thermal.x,
           thermal.z,
           this.cloudBase,
-          360 + rng() * 110,
-          250 + rng() * 80,
+          thermal.radius * (1.2 + rng() * 0.15),
+          thermal.radius * (0.68 + rng() * 0.22),
         ),
       );
     });

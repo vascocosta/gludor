@@ -9,6 +9,12 @@ const HOME_X = 620;
 const HOME_Z = -720;
 const REBUILD_DISTANCE = 2000;
 const THERMAL_CHANCE = 0.14;
+/**
+ * Global size multiplier for lift columns. The cloud markers derive their
+ * footprint from the same radius, so scaling this keeps the visible cumulus
+ * an honest map of the lift underneath.
+ */
+const THERMAL_RADIUS_SCALE = 2;
 
 export interface Thermal {
   x: number;
@@ -123,7 +129,8 @@ export class LiftField {
     const strength = this.settings.thermalStrength * (0.55 + rng() * 0.75);
     // A workable core: wide enough that a 40-45 degree circle stays inside it,
     // with a little extra width on strong days.
-    const radius = 200 + rng() * 120 + this.settings.thermalStrength * 12;
+    const radius =
+      THERMAL_RADIUS_SCALE * (200 + rng() * 120 + this.settings.thermalStrength * 12);
     const base = ground + 60 + rng() * 90;
     return this.makeThermal(x, z, base, this.settings.cloudBase, radius, strength);
   }
@@ -135,7 +142,7 @@ export class LiftField {
       HOME_Z,
       base + 70,
       this.settings.cloudBase,
-      340,
+      340 * THERMAL_RADIUS_SCALE,
       this.settings.thermalStrength * 1.12,
     );
   }
@@ -232,11 +239,11 @@ export class LiftField {
         shape;
       out.thermal += core;
 
-      const ringDistance = distance - 1.7 * radius;
+      const ringDistance = distance - 1.95 * radius;
       ring +=
-        -0.24 *
+        -0.2 *
         thermal.strength *
-        Math.exp(-((ringDistance * ringDistance) / (0.62 * radius) ** 2)) *
+        Math.exp(-((ringDistance * ringDistance) / (0.7 * radius) ** 2)) *
         shape;
     }
 

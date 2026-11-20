@@ -86,7 +86,7 @@ it("reports a workable radius and whether the glider is inside the column", () =
   expect(info).not.toBeNull();
   expect(info!.active).toBe(true);
   expect(info!.distance).toBeLessThan(20);
-  expect(info!.radius).toBeGreaterThan(340);
+  expect(info!.radius).toBeGreaterThan(680);
 
   sim.position.set(620, 2100, -720);
   sim.step(1 / 240);
