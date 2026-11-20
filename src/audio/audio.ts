@@ -9,11 +9,15 @@ interface MusicVoice {
 const MUSIC_CHORDS = [
   [73.42, 146.83, 220.0, 293.66, 349.23], // Dm(add9)
   [116.54, 174.61, 233.08, 293.66, 349.23], // B-flat major
-  [87.31, 174.61, 261.63, 349.23, 392.0], // F major
-  [130.81, 196.0, 261.63, 329.63, 392.0], // C major
-  [98.0, 146.83, 196.0, 233.08, 293.66], // G minor
-  [110.0, 164.81, 220.0, 261.63, 329.63], // A minor
-  [73.42, 146.83, 220.0, 293.66, 349.23], // D minor
+  [87.31, 174.61, 261.63, 349.23, 392.0], // F add9
+  [130.81, 196.0, 261.63, 329.63, 392.0], // C add9
+  [98.0, 146.83, 196.0, 233.08, 293.66], // G minor 7
+  [110.0, 164.81, 220.0, 261.63, 329.63], // A minor 9
+  [73.42, 146.83, 220.0, 329.63, 349.23], // D minor 9
+  [116.54, 174.61, 233.08, 261.63, 349.23], // B-flat major 9
+  [87.31, 174.61, 261.63, 329.63, 349.23], // F major 7
+  [130.81, 196.0, 261.63, 293.66, 392.0], // C sus2
+  [98.0, 146.83, 220.0, 233.08, 293.66], // G minor 9
   [110.0, 164.81, 220.0, 293.66, 329.63], // A sus4
 ];
 /** D-minor pentatonic notes for the melody. */
@@ -21,7 +25,10 @@ const MUSIC_PENTATONIC = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33];
 /** Higher pentatonic notes for the sparse bells. */
 const MUSIC_BELLS = [587.33, 783.99, 880.0, 1046.5];
 const MUSIC_LEVEL = 1.1;
-const MUSIC_CHORD_SECONDS = 9;
+/** Soft downtempo pulse: eighth-note steps at 72 BPM. */
+const MUSIC_STEP_SECONDS = 30 / 72;
+/** Change chord every two bars so the harmony lands on the pulse. */
+const MUSIC_CHORD_SECONDS = MUSIC_STEP_SECONDS * 16;
 
 /** Small WebAudio soundscape: wind, vario beeps, a stall horn and a thud. */
 export class AudioEngine {
@@ -35,6 +42,7 @@ export class AudioEngine {
   private towOscillator: OscillatorNode | null = null;
   private towGain: GainNode | null = null;
   private musicGain: GainNode | null = null;
+  private musicPadGain: GainNode | null = null;
   private musicDelay: DelayNode | null = null;
   private musicVoices: MusicVoice[] = [];
   private musicEnabled = false;
@@ -43,6 +51,8 @@ export class AudioEngine {
   private musicBellClock = 6;
   private musicMelodyClock = 2;
   private musicMelodyIndex = 2;
+  private musicBeatClock = 0;
+  private musicBeatStep = 0;
   private noiseBuffer: AudioBuffer | null = null;
   private beepClock = 0;
   private muted = false;
@@ -140,8 +150,9 @@ export class AudioEngine {
       this.towOscillator = towOscillator;
       this.towGain = towGain;
 
-      // Optional ambient music: a slow pad plus sparse bells. It is built up
-      // front so toggling is just a gain change, and it stays off by default.
+      // Optional ambient music: a breathing pad, a melody, bells and a soft
+      // pulse. It is built up front so toggling is just a gain change, and it
+      // stays off by default.
       const musicGain = context.createGain();
       musicGain.gain.value = this.musicEnabled ? MUSIC_LEVEL : 0;
       musicGain.connect(master);
@@ -151,7 +162,14 @@ export class AudioEngine {
       musicFilter.type = "lowpass";
       musicFilter.frequency.value = 1100;
       musicFilter.Q.value = 0.4;
-      musicFilter.connect(musicGain);
+
+      // A separate pad gain lets each new chord swell in instead of sitting
+      // flat for its whole duration.
+      const musicPadGain = context.createGain();
+      musicPadGain.gain.value = 1;
+      musicFilter.connect(musicPadGain);
+      musicPadGain.connect(musicGain);
+      this.musicPadGain = musicPadGain;
 
       // A very slow filter drift keeps the pad from sounding static.
       const lfo = context.createOscillator();
@@ -170,7 +188,18 @@ export class AudioEngine {
         oscillator.frequency.value = frequency;
         oscillator.detune.value = (index - 2) * 4;
         const gain = context.createGain();
-        gain.gain.value = voiceGains[index] ?? 0.12;
+        const baseGain = voiceGains[index] ?? 0.12;
+        gain.gain.value = baseGain;
+        // Each voice breathes at its own slow rate, so the chord never sits
+        // completely still.
+        const tremolo = context.createOscillator();
+        tremolo.type = "sine";
+        tremolo.frequency.value = 0.05 + index * 0.017;
+        const tremoloDepth = context.createGain();
+        tremoloDepth.gain.value = baseGain * 0.42;
+        tremolo.connect(tremoloDepth);
+        tremoloDepth.connect(gain.gain);
+        tremolo.start();
         const panner = context.createStereoPanner();
         panner.pan.value = (index / (MUSIC_CHORDS[0].length - 1)) * 0.8 - 0.4;
         oscillator.connect(gain);
@@ -364,7 +393,12 @@ export class AudioEngine {
       for (let i = 0; i < this.musicVoices.length; i++) {
         const frequency = chord[i] ?? chord[0];
         // Glide into the next chord rather than stepping to it.
-        this.musicVoices[i].oscillator.frequency.setTargetAtTime(frequency, now, 1.6);
+        this.musicVoices[i].oscillator.frequency.setTargetAtTime(frequency, now, 0.7);
+      }
+      if (this.musicPadGain) {
+        // Dip and swell around each change so the pad has a pulse of its own.
+        this.musicPadGain.gain.setTargetAtTime(0.55, now, 0.2);
+        this.musicPadGain.gain.setTargetAtTime(1, now + 1, 0.7);
       }
     }
 
@@ -393,6 +427,95 @@ export class AudioEngine {
         this.musicNote(frequency, 0.16 + Math.random() * 0.07, 1.2 + Math.random() * 1.4);
       }
     }
+
+    this.musicBeatClock += dt;
+    while (this.musicBeatClock >= MUSIC_STEP_SECONDS) {
+      this.musicBeatClock -= MUSIC_STEP_SECONDS;
+      this.musicBeat(this.musicBeatStep % 16);
+      this.musicBeatStep++;
+    }
+  }
+
+  /** One bar of the soft downtempo pulse. */
+  private musicBeat(step: number): void {
+    switch (step) {
+      case 0:
+      case 8:
+        this.musicKick(0.5);
+        break;
+      case 4:
+      case 12:
+        this.musicKick(0.32);
+        break;
+      case 11:
+        // A ghost kick on the second bar keeps the pulse from feeling square.
+        this.musicKick(0.2);
+        break;
+    }
+
+    if (step === 2 || step === 10) this.musicBrush(0.11);
+    if (step === 6 || step === 14) this.musicBrush(0.09);
+
+    if (step % 2 === 1) this.musicShaker(0.024, step % 4 === 1 ? -0.5 : 0.5);
+  }
+
+  /** A soft rounded kick. */
+  private musicKick(level: number): void {
+    if (!this.context || !this.musicGain) return;
+    const now = this.context.currentTime;
+    const oscillator = this.context.createOscillator();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(115, now);
+    oscillator.frequency.exponentialRampToValueAtTime(42, now + 0.22);
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(level, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+    oscillator.connect(gain);
+    gain.connect(this.musicGain);
+    oscillator.start(now);
+    oscillator.stop(now + 0.42);
+  }
+
+  /** A brushed-noise backbeat, short and dark. */
+  private musicBrush(level: number): void {
+    if (!this.context || !this.musicGain || !this.noiseBuffer) return;
+    const now = this.context.currentTime;
+    const source = this.context.createBufferSource();
+    source.buffer = this.noiseBuffer;
+    const filter = this.context.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 1700;
+    filter.Q.value = 0.7;
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(level, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGain);
+    source.start(now);
+    source.stop(now + 0.24);
+  }
+
+  /** A quiet offbeat shaker, panned slightly left or right. */
+  private musicShaker(level: number, pan: number): void {
+    if (!this.context || !this.musicGain || !this.noiseBuffer) return;
+    const now = this.context.currentTime;
+    const source = this.context.createBufferSource();
+    source.buffer = this.noiseBuffer;
+    const filter = this.context.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 5200;
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(level, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+    const panner = this.context.createStereoPanner();
+    panner.pan.value = pan;
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.musicGain);
+    source.start(now);
+    source.stop(now + 0.11);
   }
 
   /** A soft lead note: a triangle fundamental with a quiet octave shimmer. */
