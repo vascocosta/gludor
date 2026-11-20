@@ -7,13 +7,16 @@ import {
   moveTowards,
   pitchFromForward,
   quatFromHeadingPitchRoll,
+  RAD,
   rollFromRight,
   shortestAngle,
+  wrapDegrees,
 } from "../core/math";
 import {
   DEFAULT_WEATHER,
   GLIDER,
   GRAVITY,
+  LANDING,
   TOW,
   WORLD,
   type WeatherSettings,
@@ -30,6 +33,7 @@ export type FlightMode =
   | "winch"
   | "tow"
   | "free"
+  | "rollout"
   | "landed"
   | "ditched"
   | "crashed";
@@ -115,6 +119,7 @@ export class Simulation {
   onGround = false;
   overWater = false;
   private lastTas = 0;
+  private airTimeFrozen = false;
   private lastPosition = new Vector3();
   private messageText = "";
   private messageUntil = 0;
@@ -171,6 +176,7 @@ export class Simulation {
     this.controls = new ControlSurfaces();
     this.trim = 0;
     this.lastTas = 0;
+    this.airTimeFrozen = false;
     this.releasePushUntil = 0;
     this.lastPosition.copy(this.position);
     this.resetStats("winch");
@@ -187,6 +193,7 @@ export class Simulation {
     this.cableAttached = false;
     this.controls = new ControlSurfaces();
     this.trim = 0;
+    this.airTimeFrozen = false;
     this.releasePushUntil = 0;
     this.angular.p = 0;
     this.angular.q = 0;
@@ -342,7 +349,7 @@ export class Simulation {
 
     this.time += dt;
     this.flightTime += dt;
-    this.stats.airTime = this.flightTime;
+    if (!this.airTimeFrozen) this.stats.airTime = this.flightTime;
     scratchDelta.subVectors(this.position, this.lastPosition);
     this.stats.distance += Math.hypot(scratchDelta.x, scratchDelta.z);
     this.lastPosition.copy(this.position);
@@ -611,6 +618,15 @@ export class Simulation {
 
     const floor = surface + CLEARANCE;
     if (this.position.y > floor) {
+      // Once the glider is rolling out the wheel stays down: a bump or a gust
+      // must not launch it back into the air.
+      if (this.mode === "rollout") {
+        this.position.y = floor;
+        this.onGround = true;
+        if (this.velocity.y > 0) this.velocity.y = 0;
+        this.updateRollout(dt);
+        return;
+      }
       this.onGround = false;
       return;
     }
@@ -628,33 +644,42 @@ export class Simulation {
       return;
     }
 
-    if (this.velocity.y < 0) {
-      const impact = -this.velocity.y;
-      if (overWater) {
-        // Water is forgiving. A heavy arrival is still a ditching, not a
-        // crash: the glider stops quickly and the pilot gets a long tow home.
-        this.mode = "ditched";
+    const impact = Math.max(0, -this.velocity.y);
+    if (overWater) {
+      // Water is forgiving. A heavy arrival is still a ditching, not a
+      // crash: the glider stops quickly and the pilot gets a long tow home.
+      this.mode = "ditched";
+      this.cableAttached = false;
+      this.towPlane.hide();
+      this.velocity.multiplyScalar(0.35);
+      this.velocity.y = 0;
+      this.showMessage("Ditched - a soft splash. Press R to fly again", 7);
+      return;
+    }
+    if (this.mode === "free") {
+      if (impact > 3.4 || Math.abs(this.roll) > 0.52 || this.pitch < -0.3) {
+        this.mode = "crashed";
         this.cableAttached = false;
         this.towPlane.hide();
-        this.velocity.multiplyScalar(0.35);
-        this.velocity.y = 0;
-        this.showMessage("Ditched - a soft splash. Press R to fly again", 7);
+        this.velocity.multiplyScalar(0.15);
+        this.showMessage("Crashed - press R to restart", 6);
         return;
       }
-      if (this.mode === "free") {
-        if (impact > 3.4 || Math.abs(this.roll) > 0.52 || this.pitch < -0.3) {
-          this.mode = "crashed";
-          this.cableAttached = false;
-          this.towPlane.hide();
-          this.velocity.multiplyScalar(0.15);
-          this.showMessage("Crashed - press R to restart", 6);
-          return;
-        }
-        this.mode = "landed";
-        this.cableAttached = false;
-        this.showMessage("Landed - press R to fly again", 6);
-      }
+      // A safe touchdown starts a real landing roll. Keep simulating until
+      // the glider stops; the summary opens afterwards.
+      this.mode = "rollout";
+      this.cableAttached = false;
+      this.airTimeFrozen = true;
+      this.stats.airTime = this.flightTime;
+      this.showMessage("Touchdown - Q/E steer, B brakes", 5);
       this.velocity.y = 0;
+    } else if (this.velocity.y < 0) {
+      this.velocity.y = 0;
+    }
+
+    if (this.mode === "rollout") {
+      this.updateRollout(dt);
+      return;
     }
 
     const friction = overWater ? 3.4 : this.mode === "winch" || this.mode === "tow" ? 0.25 : 1.8;
@@ -663,6 +688,57 @@ export class Simulation {
       const decel = Math.min(horizontal, friction * dt);
       this.velocity.x -= (this.velocity.x / horizontal) * decel;
       this.velocity.z -= (this.velocity.z / horizontal) * decel;
+    }
+  }
+
+  /** Ground roll after a safe landing: friction, brakes, steering and attitude. */
+  private updateRollout(dt: number): void {
+    let speed = Math.hypot(this.velocity.x, this.velocity.z);
+
+    // A little rudder authority at speed, fading out as the glider slows, so
+    // it cannot pirouette on the spot.
+    const authority = clamp(speed / LANDING.steerSpeed, 0, 1);
+    const steer = clamp(this.input.rudder, -1, 1) * LANDING.steerRate * authority;
+    const heading = wrapDegrees(this.heading + steer * RAD * dt);
+
+    const forwardX = Math.sin(heading * DEG);
+    const forwardZ = -Math.cos(heading * DEG);
+    const rightX = Math.cos(heading * DEG);
+    const rightZ = Math.sin(heading * DEG);
+
+    const brake = clamp(this.input.brake, 0, 1);
+    speed = Math.max(0, speed - (LANDING.friction + brake * LANDING.brakeDecel) * dt);
+
+    // Scrub off sideways drift so the glider follows the wheel instead of
+    // sliding like a shopping trolley. Deliberately gentle: no ground loop.
+    let lateral = this.velocity.x * rightX + this.velocity.z * rightZ;
+    const grip = LANDING.lateralGrip * dt;
+    if (Math.abs(lateral) <= grip) lateral = 0;
+    else lateral -= Math.sign(lateral) * grip;
+
+    this.velocity.set(
+      forwardX * speed + rightX * lateral,
+      0,
+      forwardZ * speed + rightZ * lateral,
+    );
+
+    // Settle onto the ground: wings level with a slight nose-up tailwheel
+    // stance. Rebuilding the orientation keeps the model stable and forgiving.
+    const pitch = moveTowards(this.pitch, LANDING.pitch, LANDING.settleRate * dt);
+    const roll = moveTowards(this.roll, LANDING.bank, LANDING.settleRate * dt);
+    this.orientation.copy(quatFromHeadingPitchRoll(heading, pitch, roll));
+    this.axes.fromQuaternion(this.orientation);
+    this.heading = heading;
+    this.pitch = pitch;
+    this.roll = roll;
+    this.angular.p = 0;
+    this.angular.q = 0;
+    this.angular.r = 0;
+
+    if (speed < LANDING.stopSpeed) {
+      this.velocity.set(0, 0, 0);
+      this.mode = "landed";
+      this.showMessage("Landed", 4);
     }
   }
 

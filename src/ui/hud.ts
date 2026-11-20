@@ -72,7 +72,7 @@ export class Hud {
     // the duplicate bottom cluster would only sit on top of it.
     if (!cockpitView || state === "ended") this.drawPanel(sim);
     this.drawMessage(sim);
-    if (thermalHelpers) this.drawThermalHelper(sim);
+    if (thermalHelpers && !sim.onGround) this.drawThermalHelper(sim);
     if (sim.stall > 0.22) this.drawStall(sim);
     if (debug) this.drawDebug(sim, fps);
   }
@@ -144,13 +144,15 @@ export class Hud {
           ? "WINCH LAUNCH"
           : sim.mode === "tow"
             ? "AEROTOW"
-            : sim.mode === "landed"
-            ? "LANDED"
-            : sim.mode === "ditched"
-              ? "DITCHED"
-              : sim.mode === "crashed"
-                ? "CRASHED"
-                : "FREE FLIGHT";
+            : sim.mode === "rollout"
+              ? "ROLLOUT"
+              : sim.mode === "landed"
+                ? "LANDED"
+                : sim.mode === "ditched"
+                  ? "DITCHED"
+                  : sim.mode === "crashed"
+                    ? "CRASHED"
+                    : "FREE FLIGHT";
     ctx.fillStyle = state === "paused" ? AMBER : sim.mode === "crashed" ? RED : CYAN;
     ctx.font = "600 11px ui-monospace, SFMono-Regular, Menlo, monospace";
     ctx.fillText(status, x + 16, y + 89);
@@ -160,7 +162,13 @@ export class Hud {
     // Bottom controls hint.
     ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
     ctx.fillStyle = "rgba(210, 230, 235, 0.55)";
-    ctx.fillText("SPACE release   B airbrakes   T/G trim   C camera   V inspect   F1 help   ESC menu", 22, this.height - 16);
+    const hint =
+      sim.mode === "rollout"
+        ? "Q/E steer   B wheel brake   R restart   C camera   V inspect   F1 help   ESC menu"
+        : sim.mode === "landed"
+          ? "Landed - R restart   C camera   V inspect   F1 help   ESC menu"
+          : "SPACE release   B airbrakes   T/G trim   C camera   V inspect   F1 help   ESC menu";
+    ctx.fillText(hint, 22, this.height - 16);
   }
 
   private drawPanel(sim: Simulation): void {

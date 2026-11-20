@@ -84,6 +84,34 @@ export const TEMP_LAPSE = 0.0065;
 
 export const PHYSICS_STEP = 1 / 240;
 
+/**
+ * Landing rollout. A safe touchdown does not end the flight: the glider keeps
+ * rolling on the ground until it stops, and only then does the summary open.
+ * The numbers are deliberately forgiving; there is no ground-loop model.
+ */
+export const LANDING = {
+  /** Rolling friction on grass, m/s². */
+  friction: 1.0,
+  /** Extra deceleration from the wheel brake (B), m/s². */
+  brakeDecel: 3.0,
+  /** Ground speed below which the glider is considered stopped, m/s. */
+  stopSpeed: 0.8,
+  /** Maximum yaw rate from the rudder while rolling, rad/s. */
+  steerRate: 0.25,
+  /** Speed below which the rudder has little steering authority, m/s. */
+  steerSpeed: 8,
+  /** How quickly sideways drift is scrubbed off, m/s². */
+  lateralGrip: 2.0,
+  /** How fast the attitude settles onto the ground, rad/s. */
+  settleRate: 2.5,
+  /** Tailwheel stance: a gentle nose-up pitch, radians. */
+  pitch: 0.05,
+  /** Wings level on the ground, radians. */
+  bank: 0,
+  /** Delay after stopping before the flight summary opens, seconds. */
+  summaryDelay: 1.5,
+};
+
 export interface WeatherSettings {
   windSpeed: number; // km/h at 10 m above ground
   windFrom: number; // degrees, meteorological: direction the wind comes from

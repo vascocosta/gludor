@@ -1,5 +1,5 @@
 import "./style.css";
-import { PHYSICS_STEP, type WeatherSettings } from "./config";
+import { LANDING, PHYSICS_STEP, type WeatherSettings } from "./config";
 import { AudioEngine } from "./audio/audio";
 import { KeyboardInput } from "./input/keyboard";
 import { Hud, type HudState } from "./ui/hud";
@@ -29,6 +29,8 @@ let lastWeather: WeatherSettings | null = null;
 let lastLaunch: LaunchType = "winch";
 let helpResumesFlight = false;
 let accumulator = 0;
+let landedTimer = 0;
+let landingAudioPlayed = false;
 let dragging = false;
 let lastPointerX = 0;
 let lastPointerY = 0;
@@ -67,6 +69,8 @@ function startFlight(weather: WeatherSettings, launch: LaunchType): void {
   ui.closeHelp();
   helpResumesFlight = false;
   accumulator = 0;
+  landedTimer = 0;
+  landingAudioPlayed = false;
   appState = "flying";
   audio.start();
   audio.setActive(true);
@@ -150,8 +154,10 @@ function endFlight(): void {
   appState = "ended";
   const summary = simulation.getSummary();
   ui.showSummary(summary);
+  // The landing thump already played at touchdown; only the destructive
+  // outcomes still need a sound here.
   if (simulation.mode === "ditched") audio.splash();
-  else audio.landingThump(simulation.mode === "crashed");
+  else if (simulation.mode === "crashed") audio.landingThump(true);
   audio.setActive(false);
 }
 
@@ -321,12 +327,18 @@ function frame(now: number): void {
     }
     if (steps >= 16) accumulator = 0;
 
-    if (
-      simulation.mode === "landed" ||
-      simulation.mode === "ditched" ||
-      simulation.mode === "crashed"
-    ) {
+    if (simulation.mode === "rollout" && !landingAudioPlayed) {
+      landingAudioPlayed = true;
+      audio.landingThump(false);
+    }
+
+    if (simulation.mode === "landed") {
+      landedTimer += dt;
+      if (landedTimer >= LANDING.summaryDelay) endFlight();
+    } else if (simulation.mode === "ditched" || simulation.mode === "crashed") {
       endFlight();
+    } else {
+      landedTimer = 0;
     }
   } else {
     accumulator = 0;

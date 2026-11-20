@@ -45,9 +45,9 @@ snow-capped peaks holding the last light.*
 - **Views.** Chase, cockpit (canopy frame, arched dash, knee wells and live
   panel), and orbit. Mouse-drag looks around; double-click resets. A detached
   free camera (`V`) lets you inspect the terrain from the menu or mid-flight.
-- **Full flight loop.** Pause, restart, crash/landing/ditching detection, a
-  post-flight summary, procedural wind/vario/stall audio, and a debug
-  telemetry overlay.
+- **Full flight loop.** Pause, restart, crash/ditching detection, a steerable
+  landing roll with wheel brakes, a post-flight summary, procedural
+  wind/vario/stall audio, and a debug telemetry overlay.
 
 V1 is deliberately solo: no tasks, scoring, multiplayer, wave, real DEM data,
 VR, or mobile touch controls.
@@ -151,7 +151,7 @@ npm run preview # serve the production build locally
 | `W` / `S` or `↑` / `↓` | Pitch — forward pushes, back pulls |
 | `A` / `D` or `←` / `→` | Roll |
 | `Q` / `E` | Rudder |
-| `B` | Airbrakes (hold) |
+| `B` | Airbrakes (hold); wheel brake during the landing roll |
 | `T` / `G` | Trim nose up / nose down |
 | `Space` | Release the winch cable or tow rope |
 | `C` | Cycle chase / cockpit / orbit view |
@@ -189,9 +189,11 @@ On the menu, **Enter** starts the selected flight.
 4. **Land.** Airbrakes are effective. Arrive with height, fly a normal circuit,
    and touch down wings level and slow. Ground contact above 3.4 m/s vertical
    speed, more than ~30° of bank, or a nose-down attitude is treated as a
-   crash. A touchdown on a lake is always a ditching, however fast: the flight
-   ends gently and the summary says so. A town roof is solid, so pick an open
-   field rather than a garden.
+   crash. A safe touchdown starts a real landing roll: the glider keeps moving,
+   `Q`/`E` steer with the rudder, and `B` applies the wheel brake. The summary
+   opens once it comes to rest. A touchdown on a lake is always a ditching,
+   however fast: the flight ends gently and the summary says so. A town roof is
+   solid, so pick an open field rather than a garden.
 
 ### Cockpit view
 
@@ -356,14 +358,14 @@ src/
     aero.ts          lift/drag/moment coefficients
     towplane.ts      scripted aerotow tug: roll, climb, turn, release, departure
     simulation.ts    6DOF flight loop, winch and aerotow rope, ground/water/roof
-                     contact, telemetry
+                     contact, landing rollout, telemetry
   render/            Three.js scene, terrain/water/town/glider/cloud/sky meshes,
                      and the procedural aerotow tug
   ui/                HUD instruments and menu/pause/summary wiring
   input/             keyboard state
   audio/             procedural WebAudio soundscape
-test/                aero, flight, weather, streaming, lake, town, mountain, and
-                     aerotow tests
+test/                aero, flight, weather, streaming, lake, town, mountain,
+                     aerotow, and landing-rollout tests
 ```
 
 ## Tests
@@ -383,6 +385,10 @@ The headless suite exercises the model rather than the DOM:
 - Lakes: deterministic generation, airfield exclusion, sensible landmark
   density, shoreline containment, water-aware thermals, and ditching rather
   than crashing.
+- Landings: touchdown enters a rollout rather than ending immediately, wheel
+  braking shortens the roll, rudder steering turns it, it cannot bounce back
+  into the air, air time freezes at touchdown, and it settles into the landed
+  state.
 - Towns: deterministic layout, airfield exclusion, the fixed home town and its
   tower, dry workable plots, roof queries, believable density, and a fatal roof
   strike.
