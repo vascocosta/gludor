@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  CanvasTexture,
   CircleGeometry,
   Color,
   ConeGeometry,
@@ -11,6 +12,8 @@ import {
   MeshStandardMaterial,
   Object3D,
   PlaneGeometry,
+  RepeatWrapping,
+  SRGBColorSpace,
   Vector3,
 } from "three";
 import { STREAMING, WORLD } from "../config";
@@ -277,6 +280,81 @@ export class TreeField {
   }
 }
 
+/** A muted, mown grass surface with lengthwise stripes. */
+function createGrassStripTexture(): CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("2D canvas unavailable");
+
+  const bands = 8;
+  for (let i = 0; i < bands; i++) {
+    context.fillStyle = i % 2 === 0 ? "#5d7d45" : "#55743e";
+    context.fillRect((i / bands) * canvas.width, 0, canvas.width / bands + 1, canvas.height);
+  }
+
+  const random = mulberry32(0x5eed1234);
+  for (let i = 0; i < 600; i++) {
+    context.fillStyle =
+      random() < 0.5 ? "rgba(20, 35, 15, 0.10)" : "rgba(150, 180, 120, 0.08)";
+    context.fillRect(random() * canvas.width, random() * canvas.height, 3, 2);
+  }
+
+  const texture = new CanvasTexture(canvas);
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.colorSpace = SRGBColorSpace;
+  texture.repeat.set(1, 5);
+  texture.anisotropy = 4;
+  return texture;
+}
+
+/** A white dash on a transparent tile, repeated along a grass runway edge. */
+function createDashTexture(): CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 16;
+  canvas.height = 64;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("2D canvas unavailable");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#e8e6dc";
+  context.fillRect(2, 0, 12, 32);
+
+  const texture = new CanvasTexture(canvas);
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.colorSpace = SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+/** Painted runway designator, transparent outside the glyphs. */
+function createRunwayNumberTexture(label: string): CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 384;
+  canvas.height = 256;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("2D canvas unavailable");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#e8e6dc";
+  context.font = "700 150px ui-sans-serif, system-ui, -apple-system, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(label, 192, 136);
+
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+const GRASS_RUNWAY = {
+  x: -70,
+  length: 1200,
+  width: 30,
+} as const;
+
 export class Airfield {
   readonly group = new Group();
   readonly winch = new Group();
@@ -322,6 +400,85 @@ export class Airfield {
         this.group.add(bar);
       }
     }
+
+    // Grass runway, shorter and to the left of the asphalt strip.
+    const grassMaterial = new MeshStandardMaterial({
+      map: createGrassStripTexture(),
+      roughness: 1,
+      metalness: 0,
+    });
+    const grassStrip = new Mesh(
+      new PlaneGeometry(GRASS_RUNWAY.width, GRASS_RUNWAY.length),
+      grassMaterial,
+    );
+    grassStrip.rotation.x = -Math.PI / 2;
+    grassStrip.position.set(GRASS_RUNWAY.x, this.fieldY + 0.05, 0);
+    grassStrip.receiveShadow = true;
+    this.group.add(grassStrip);
+
+    const dashTexture = createDashTexture();
+    dashTexture.repeat.set(1, GRASS_RUNWAY.length / 20);
+    const dashMaterial = new MeshStandardMaterial({
+      map: dashTexture,
+      transparent: true,
+      alphaTest: 0.4,
+      roughness: 0.8,
+    });
+    const edgeDashGeometry = new PlaneGeometry(0.6, GRASS_RUNWAY.length);
+    for (const side of [-1, 1]) {
+      const edge = new Mesh(edgeDashGeometry, dashMaterial);
+      edge.rotation.x = -Math.PI / 2;
+      edge.position.set(
+        GRASS_RUNWAY.x + side * (GRASS_RUNWAY.width / 2),
+        this.fieldY + 0.065,
+        0,
+      );
+      this.group.add(edge);
+    }
+
+    // Short dashes close the outline across the grass thresholds.
+    const endDashGeometry = new PlaneGeometry(2, 0.6);
+    for (const end of [-1, 1]) {
+      for (let i = 0; i < 6; i++) {
+        const dash = new Mesh(endDashGeometry, white);
+        dash.rotation.x = -Math.PI / 2;
+        dash.position.set(
+          GRASS_RUNWAY.x - GRASS_RUNWAY.width / 2 + 2.5 + i * 5,
+          this.fieldY + 0.065,
+          end * (GRASS_RUNWAY.length / 2 - 0.5),
+        );
+        this.group.add(dash);
+      }
+    }
+
+    const addRunwayNumber = (
+      label: string,
+      x: number,
+      z: number,
+      width: number,
+      height: number,
+      reverse: boolean,
+      y: number,
+    ): void => {
+      const material = new MeshStandardMaterial({
+        map: createRunwayNumberTexture(label),
+        transparent: true,
+        alphaTest: 0.4,
+        roughness: 0.8,
+      });
+      const number = new Mesh(new PlaneGeometry(width, height), material);
+      number.rotation.x = -Math.PI / 2;
+      if (reverse) number.rotation.z = Math.PI;
+      number.position.set(x, y, z);
+      number.receiveShadow = true;
+      this.group.add(number);
+    };
+
+    // Parallel strips: the asphalt is right of the grass when heading north.
+    addRunwayNumber("36R", 0, 925, 18, 12, false, this.fieldY + 0.095);
+    addRunwayNumber("18L", 0, -925, 18, 12, true, this.fieldY + 0.095);
+    addRunwayNumber("36L", GRASS_RUNWAY.x, 520, 16, 10.67, false, this.fieldY + 0.075);
+    addRunwayNumber("18R", GRASS_RUNWAY.x, -520, 16, 10.67, true, this.fieldY + 0.075);
 
     const hangarMaterial = new MeshStandardMaterial({ color: 0x9a9b93, roughness: 0.85 });
     const roofMaterial = new MeshStandardMaterial({ color: 0x5b5f62, roughness: 0.9 });

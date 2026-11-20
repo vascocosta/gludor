@@ -21,7 +21,8 @@ snow-capped peaks holding the last light.*
   tug on the runway ahead of you; it lifts off, climbs away, and turns gently
   over the field, towing you to 1,200 m AGL.
 - **An endless procedural world.** One airfield at the origin (400 m
-  elevation), a finite training ridge to the north, snow-capped alpine ranges
+  elevation) with a 2 km asphalt runway and a shorter parallel grass strip,
+  a finite training ridge to the north, snow-capped alpine ranges
   beyond 6 km, rolling farmland, clustered woodland, lakes scattered across the
   farmland, market towns strung along their lanes, and cumulus clouds marking
   the thermals. Terrain, trees, water, buildings, clouds, and shadows all stream
@@ -282,7 +283,8 @@ moving window of 4 km tiles at 50 m (near), 8 km at 100 m (mid), and 16 km at
 underneath them, hiding both LOD seams and the frames while new edge tiles are
 generated. Generation is seeded, so the same world position always produces the
 same terrain, whatever order tiles are visited in. The airfield is flattened
-around the origin, with a 2 km runway along Z.
+around the origin, with a 2 km asphalt runway along Z, a 1.2 km parallel grass
+strip, painted runway designators and dashed white grass edges.
 
 Mountains come from a deterministic 9 km grid: each cell has a 60% chance of a
 massif, made from one main peak plus up to three satellite summits. Alpine
