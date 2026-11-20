@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Gludor — a browser soaring simulator about reading the sky."
+    />
+    <title>Gludor — Soaring Simulator</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23071016'/%3E%3Cpath d='M4 19 L16 12 L28 19 L16 17 Z' fill='%238fe3f2'/%3E%3Cpath d='M16 6 L18 12 L14 12 Z' fill='%23e8f4f7'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="scene" aria-label="Gludor flight view"></canvas>
+    <canvas id="hud"></canvas>
+    <div id="vignette"></div>
+
+    <section id="menu" class="overlay">
+      <div class="menu-wrap">
+        <div class="panel menu-panel">
+          <header class="brand">
+            <div class="eyebrow">Gliding · Soaring · Weather</div>
+            <h1>GLUDOR</h1>
+            <p class="lede">
+              A quiet machine, a loud sky. Find the lift, read the clouds and
+              stay up as long as the afternoon allows.
+            </p>
+          </header>
+
+          <div class="menu-grid">
+            <label class="field field-wide">
+              <span>Weather preset</span>
+              <select id="preset"></select>
+              <small id="preset-description" class="hint"></small>
+            </label>
+
+            <label class="field">
+              <span>Launch</span>
+              <select id="launch">
+                <option value="winch">Winch launch</option>
+                <option value="tow">Aerotow · 1,200 m</option>
+                <option value="air">Air start · 650 m</option>
+              </select>
+              <small class="hint">Winch or aerotow for a real launch. Air start skips the climb.</small>
+            </label>
+
+            <div class="slider-block">
+              <label class="slider-row">
+                <span>Wind <b id="wind-value"></b></span>
+                <input id="wind" type="range" min="0" max="45" step="1" />
+              </label>
+              <label class="slider-row">
+                <span>Wind from <b id="windfrom-value"></b></span>
+                <input id="windfrom" type="range" min="0" max="359" step="1" />
+              </label>
+              <label class="slider-row">
+                <span>Thermals <b id="thermal-value"></b></span>
+                <input id="thermal" type="range" min="0" max="5" step="0.1" />
+              </label>
+              <label class="slider-row">
+                <span>Turbulence <b id="turbulence-value"></b></span>
+                <input id="turbulence" type="range" min="0" max="100" step="1" />
+              </label>
+              <label class="slider-row">
+                <span>Cloudbase <b id="cloudbase-value"></b></span>
+                <input id="cloudbase" type="range" min="1000" max="3000" step="50" />
+              </label>
+              <label class="slider-row">
+                <span>Time of day <b id="time-value"></b></span>
+                <input id="timeofday" type="range" min="7" max="19" step="0.5" />
+              </label>
+            </div>
+          </div>
+
+          <div class="menu-actions">
+            <button id="fly" class="primary">Fly</button>
+            <button id="help-open" class="ghost">Controls &amp; tips</button>
+          </div>
+
+          <footer class="menu-footer">
+            <span>GD-81 · 15 m · L/D 38</span>
+            <span>Mouse drag looks around · C changes view · V inspects</span>
+          </footer>
+        </div>
+
+        <aside class="panel aside-panel">
+          <div class="eyebrow">First flight</div>
+          <ol class="briefing">
+            <li><b>Launch.</b> Take the winch or follow the tug; release with SPACE when the climb flattens.</li>
+            <li><b>Find lift.</b> Cumulus mark the thermals. Turn tightly, keep the slip ball centred, watch the vario, and follow the top-right arrow until it turns green.</li>
+            <li><b>Read the ridge.</b> The long slope north of the field works when the wind blows onto it.</li>
+            <li><b>Land.</b> Airbrakes are strong. Arrive high, fly a normal circuit, and touch down wings level.</li>
+          </ol>
+          <div class="keys">
+            <div><kbd>W</kbd><kbd>S</kbd> pitch</div>
+            <div><kbd>A</kbd><kbd>D</kbd> roll</div>
+            <div><kbd>Q</kbd><kbd>E</kbd> rudder</div>
+            <div><kbd>B</kbd> airbrakes</div>
+            <div><kbd>T</kbd><kbd>G</kbd> trim</div>
+            <div><kbd>SPACE</kbd> release</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="pause" class="overlay hidden">
+      <div class="panel compact-panel">
+        <div class="eyebrow">Flight paused</div>
+        <h2>Take a breath.</h2>
+        <p class="hint">The air will wait.</p>
+        <div class="stack">
+          <button id="resume" class="primary">Resume</button>
+          <button id="restart" class="ghost">Restart flight</button>
+          <button id="pause-inspect" class="ghost">Inspect terrain</button>
+          <button id="pause-menu" class="ghost">Main menu</button>
+          <button id="pause-help" class="ghost">Controls &amp; tips</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="summary" class="overlay hidden">
+      <div class="panel compact-panel">
+        <div id="summary-eyebrow" class="eyebrow">Flight complete</div>
+        <h2 id="summary-title">Landed</h2>
+        <p id="summary-note" class="hint"></p>
+        <div class="stats" id="summary-stats"></div>
+        <div class="stack horizontal">
+          <button id="summary-restart" class="primary">Fly again</button>
+          <button id="summary-menu" class="ghost">Main menu</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="help" class="overlay hidden">
+      <div class="panel help-panel">
+        <div class="eyebrow">Controls &amp; tips</div>
+        <h2>Flying the GD-81</h2>
+        <div class="help-grid">
+          <div>
+            <h3>Flight controls</h3>
+            <dl>
+              <dt><kbd>W</kbd> / <kbd>S</kbd> or <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Pitch — forward pushes, back pulls</dd>
+              <dt><kbd>A</kbd> / <kbd>D</kbd> or <kbd>←</kbd> <kbd>→</kbd></dt><dd>Roll</dd>
+              <dt><kbd>Q</kbd> / <kbd>E</kbd></dt><dd>Rudder</dd>
+              <dt><kbd>B</kbd></dt><dd>Airbrakes (hold)</dd>
+              <dt><kbd>T</kbd> / <kbd>G</kbd></dt><dd>Trim nose up / down</dd>
+              <dt><kbd>SPACE</kbd></dt><dd>Release the winch cable or tow rope</dd>
+            </dl>
+          </div>
+          <div>
+            <h3>View &amp; system</h3>
+            <dl>
+              <dt><kbd>C</kbd></dt><dd>Chase / cockpit / orbit view</dd>
+              <dt><kbd>V</kbd></dt><dd>Free camera — inspect the terrain</dd>
+              <dt>Mouse drag</dt><dd>Look around in cockpit, orbit, and free camera</dd>
+              <dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></dt><dd>Move in free camera (<kbd>SHIFT</kbd> fast, <kbd>Q</kbd>/<kbd>E</kbd> down/up)</dd>
+              <dt><kbd>R</kbd></dt><dd>Restart the flight</dd>
+              <dt><kbd>ESC</kbd></dt><dd>Pause / close this panel</dd>
+              <dt><kbd>F2</kbd></dt><dd>Toggle flight assist</dd>
+              <dt><kbd>F3</kbd></dt><dd>Telemetry overlay</dd>
+              <dt><kbd>F4</kbd></dt><dd>Thermal helpers (particles and core cue)</dd>
+              <dt><kbd>M</kbd></dt><dd>Mute audio</dd>
+            </dl>
+          </div>
+          <div>
+            <h3>Soaring notes</h3>
+            <ul class="notes">
+              <li>Thermals widen with height. The strongest lift is usually in the core, not at the edge.</li>
+              <li>Use 40–50° of bank in a thermal and keep the slip ball centred. Slower is not always better.</li>
+              <li>Ridge lift is smooth and mechanical. Stay inside the band of lift along the windward slope.</li>
+              <li>Total-energy vario compensates for speed changes. Pull up and it will read the energy you are trading.</li>
+              <li>Airbrakes are your friend on approach. Full boards give a steep, controllable descent.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="stack horizontal">
+          <button id="help-close" class="primary">Back to the sky</button>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
