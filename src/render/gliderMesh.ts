@@ -1139,7 +1139,8 @@ export class GliderMesh {
         metalness: 0.05,
         emissive: 0xffffff,
         emissiveMap: this.instruments.texture,
-        emissiveIntensity: 0.16,
+        emissiveIntensity: 0.7,
+        toneMapped: false,
       }),
     );
     panelFace.position.set(0, 0.02, 0.06);
