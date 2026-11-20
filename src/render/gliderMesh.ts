@@ -382,7 +382,8 @@ function createFuselageGeometry(): BufferGeometry {
 function createDashShape(): Shape {
   const half = 0.25;
   const topEdge = 0.113;
-  const shoulderX = 0.235;
+  const topHalf = 0.215;
+  const shoulderY = 0.088;
   const sideBottom = -0.103;
   const outerBottom = -0.115;
   const archPeak = -0.064;
@@ -393,11 +394,11 @@ function createDashShape(): Shape {
   const stemCorner = 0.012;
 
   const shape = new Shape();
-  shape.moveTo(-shoulderX, topEdge);
-  // A straight top rail leaves more over-the-nose view than the old shallow
-  // arch without sacrificing the deep knee cut-outs below.
-  shape.lineTo(shoulderX, topEdge);
-  shape.quadraticCurveTo(half, topEdge, half, 0.1);
+  shape.moveTo(-topHalf, topEdge);
+  // A straight, slightly narrower top rail with chamfered upper corners: the
+  // top reads as the top of a hexagon without losing the knee cut-outs.
+  shape.lineTo(topHalf, topEdge);
+  shape.lineTo(half, shoulderY);
   shape.lineTo(half, sideBottom);
   shape.quadraticCurveTo(half, outerBottom, half - 0.012, outerBottom);
   shape.quadraticCurveTo(0.205, archPeak, archPeakX, archPeak);
@@ -410,8 +411,8 @@ function createDashShape(): Shape {
   shape.quadraticCurveTo(-0.128, archPeak, -archPeakX, archPeak);
   shape.quadraticCurveTo(-0.205, archPeak, -half + 0.012, outerBottom);
   shape.quadraticCurveTo(-half, outerBottom, -half, sideBottom);
-  shape.lineTo(-half, 0.1);
-  shape.quadraticCurveTo(-half, topEdge, -shoulderX, topEdge);
+  shape.lineTo(-half, shoulderY);
+  shape.lineTo(-topHalf, topEdge);
   shape.closePath();
   return shape;
 }
@@ -1235,7 +1236,7 @@ export class GliderMesh {
 
     // Dark padded brow over the dials, echoing the hooded panel of a glass
     // ship. It is narrow enough to stay inside the dash silhouette.
-    const brow = new Mesh(new BoxGeometry(0.44, 0.022, 0.06), coamingMaterial);
+    const brow = new Mesh(new BoxGeometry(0.42, 0.022, 0.06), coamingMaterial);
     brow.position.set(0, 0.102, 0.025);
     dashboard.add(brow);
 
