@@ -158,9 +158,15 @@ export const WEATHER_PRESETS: WeatherPreset[] = [
   },
   {
     id: "ridge",
-    label: "Ridge day",
-    description: "Strong southerly onto the ridge. Little thermal activity.",
+    label: "Ridge day south",
+    description: "Strong southerly onto the main chain. Little thermal activity.",
     weather: { windSpeed: 38, windFrom: 180, thermalStrength: 0.7, turbulence: 0.32, cloudBase: 2000, timeOfDay: 15 },
+  },
+  {
+    id: "ridge-west",
+    label: "Ridge day west",
+    description: "Strong westerly across the valley onto the north-south bank.",
+    weather: { windSpeed: 38, windFrom: 270, thermalStrength: 0.7, turbulence: 0.32, cloudBase: 2000, timeOfDay: 15 },
   },
   {
     id: "evening",
@@ -262,6 +268,20 @@ export const RIDGES: RidgeSpec[] = [
     taper: 1600,
     seed: 17.2,
     roughness: 0.17,
+  },
+  // A north-south bank west of the field. It barely works in the usual
+  // southerly, but gives westerly days a long slope of their own and meets the
+  // west spur in a high junction.
+  {
+    x: -12_500,
+    z: -1000,
+    length: 10_000,
+    halfWidth: 700,
+    height: 500,
+    yaw: Math.PI / 2,
+    taper: 2200,
+    seed: 23.7,
+    roughness: 0.18,
   },
 ];
 

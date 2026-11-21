@@ -22,7 +22,8 @@ snow-capped peaks holding the last light.*
   over the field, towing you to 1,200 m AGL.
 - **An endless procedural world.** One airfield at the origin (400 m
   elevation) with a 2 km asphalt runway and a shorter parallel grass strip,
-  a finite training ridge to the north, snow-capped alpine ranges
+  a chain of finite training ridges north and west of the field, snow-capped
+  alpine ranges
   beyond 6 km, rolling farmland, clustered woodland, lakes scattered across the
   farmland, market towns strung along their lanes, and cumulus clouds marking
   the thermals. Terrain, trees, water, buildings, clouds, and shadows all stream
@@ -84,9 +85,12 @@ a long tow home.
 
 ## Mountains
 
-The ridge north of the field is deliberately finite. It fades out about 7 km
-either side of the airfield, so a ridge-day flight has a dependable training
-slope instead of an infinite wall running to every horizon.
+The training ridges are deliberately finite and hand-placed. North of the
+airfield a 15 km central bank runs east-west, with a shorter spur and a real
+col beyond each end, so a ridge run is a route from one climb to the next
+rather than a lap of one wall. A north-south bank stands west of the field,
+crossing the west spur in a high junction; it barely works in the usual
+southerly, but gives westerly days a long slope of their own.
 
 Beyond 6 km the world grows a seeded 9 km mountain grid. Each cell owns a
 massif or nothing, and the massif comes entirely from its cell seed: usually a
@@ -187,9 +191,10 @@ On the menu, **Enter** starts the selected flight.
    in the middle and widen with height. The top-right helper points at the
    nearest core; inside it switches to metres and turns green with a `CORE`
    label when you are centered.
-3. **Use the ridge.** With a southerly wind, the long slope north of the field
-   produces smooth mechanical lift. Stay inside the band just above the
-   windward face.
+3. **Use the ridge.** With a southerly wind, the long central bank north of the
+   field produces smooth mechanical lift; work it from spur to spur and cross
+   the cols with height. On a westerly, the north-south bank to the west takes
+   over. Stay inside the band just above the windward face.
 4. **Land.** Airbrakes are effective. Arrive with height, fly a normal circuit,
    and touch down wings level and slow. Ground contact above 3.4 m/s vertical
    speed, more than ~30° of bank, or a nose-down attitude is treated as a
@@ -237,7 +242,8 @@ lit correctly. `V` or `Esc` returns to the previous screen and flight state.
 | Gentle afternoon | 5 km/h | 1.1 m/s | Soft air, easy first flight |
 | Standard soaring day | 15 km/h | 2.6 m/s | Reliable cumulus and a workable breeze |
 | Strong thermals | 22 km/h | 4.2 m/s | Big climbs, strong sink, turbulent boundary layer |
-| Ridge day | 38 km/h | 0.7 m/s | Strong southerly onto the ridge |
+| Ridge day south | 38 km/h | 0.7 m/s | Strong southerly onto the main chain |
+| Ridge day west | 38 km/h | 0.7 m/s | Strong westerly onto the north-south bank |
 | Evening glass | 8 km/h | 0.5 m/s | Smooth air, weak lift, long shadows |
 
 Wind direction, speed, thermal strength, turbulence, cloudbase, and time of day
@@ -403,7 +409,7 @@ The headless suite exercises the model rather than the DOM:
 - Towns: deterministic layout, airfield exclusion, the fixed home town and its
   tower, dry workable plots, roof queries, believable density, and a fatal roof
   strike.
-- Mountains: determinism, the six-kilometre keep-out, a finite home ridge,
+- Mountains: determinism, the six-kilometre keep-out, finite hand-placed ridges,
   alpine peaks alongside ordinary foothills, plausible height bounds, and
   snow-line summits.
 - Aerotow: runway setup and rope length, a hands-off climb to 1,200 m in a

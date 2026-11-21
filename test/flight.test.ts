@@ -173,4 +173,19 @@ describe("lift field", () => {
     expect(best).toBeGreaterThan(0.8);
     expect(best).toBeLessThan(7);
   });
+
+  it("works the cross ridge on a westerly", () => {
+    const westerly: WeatherSettings = { ...weather, windSpeed: 38, windFrom: 270 };
+    const atmosphere = new Atmosphere(westerly, terrain, 7);
+    const field = new LiftField(terrain, atmosphere, westerly, 7);
+    let best = 0;
+    for (let x = -14_000; x <= -11_000; x += 50) {
+      const ground = terrain.heightAt(x, -1200);
+      const result = field.sample(new Vector3(x, ground + 120, -1200), 0);
+      if (result.ridge > best) best = result.ridge;
+    }
+    console.log("west ridge best", best);
+    expect(best).toBeGreaterThan(0.8);
+    expect(best).toBeLessThan(7);
+  });
 });
