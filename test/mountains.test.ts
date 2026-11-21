@@ -87,19 +87,23 @@ describe("mountains", () => {
     expect(Math.max(...mountain)).toBeLessThanOrEqual(MOUNTAINS.maxHeight);
   });
 
-  it("keeps the home ridge finite", () => {
-    // The training ridge still stands north of the field.
+  it("keeps the home ridges finite", () => {
+    // The central training bank still stands north of the field.
     let crestLow = Infinity;
-    for (let x = -4200; x <= 4200; x += 300) {
-      crestLow = Math.min(crestLow, terrainHeightAt(x, -2850, WORLD));
+    for (let x = -2400; x <= 2400; x += 300) {
+      crestLow = Math.min(crestLow, terrainHeightAt(x, -2950, WORLD));
     }
     expect(crestLow).toBeGreaterThan(650);
 
-    // More than 10 km along the same line, only ordinary ground remains once
-    // the random mountains are subtracted.
+    // Real cols separate the banks, so the chain is not one unbroken wall.
+    const crest = terrainHeightAt(0, -2950, WORLD);
+    expect(terrainHeightAt(-3950, -2750, WORLD)).toBeLessThan(crest - 250);
+
+    // Past the outer banks, only ordinary ground remains once the random
+    // mountains are subtracted.
     let farHigh = -Infinity;
     for (let x = -30_000; x <= 30_000; x += 500) {
-      if (Math.abs(x) < 10_000) continue;
+      if (Math.abs(x) < 11_000) continue;
       const ridge = terrainHeightAt(x, -2850, WORLD) - mountainHeightAt(x, -2850, WORLD);
       farHigh = Math.max(farHigh, ridge);
     }

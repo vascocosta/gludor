@@ -1,4 +1,4 @@
-import { LAKES, MOUNTAINS, WORLD, type WorldConfig } from "../config";
+import { LAKES, MOUNTAINS, RIDGES, WORLD, type RidgeSpec, type WorldConfig } from "../config";
 import { lerp, smoothstep } from "../core/math";
 import { fbm2D, hash2, mulberry32, ridged2D, valueNoise2D } from "../core/rng";
 
@@ -14,16 +14,13 @@ export function baseHeightAt(x: number, z: number, config: WorldConfig): number 
   h += 115 * (fbm2D(x * 0.00032, z * 0.00032, 4, seed) - 0.5) * 2;
   h += 44 * (fbm2D(x * 0.0011, z * 0.0011, 4, seed + 7) - 0.5) * 2;
 
-  // The main east-west ridge, just north of the airfield. The crest
-  // wanders a little so the slope has bays and spurs to work with. It is
-  // finite: a training ridge that fades out about 7 km either side of the
-  // field instead of running to every horizon.
-  const along = 1 - smoothstep(4200, 7200, Math.abs(x));
-  const wobble = 340 * (valueNoise2D(x * 0.00038, 3.7, seed + 11) - 0.5) * 2;
-  const dz = z + 2850 + wobble;
-  const ridgeProfile = Math.exp(-(dz * dz) / (2 * 760 * 760));
-  const crest = 0.8 + 0.42 * ridged2D(x * 0.00075, 2.2, 3, seed + 23);
-  h += 610 * ridgeProfile * crest * along;
+  // Hand-placed training ridges north of the airfield. A chain rather than a
+  // single wall: each bank is finite, with tapered ends and cols between them.
+  // Inside the flattened field the ridge would be discarded anyway, so skip
+  // its noise entirely.
+  const distance = Math.sqrt(x * x + z * z);
+  const flat = 1 - smoothstep(config.fieldFlattenInner, config.fieldFlattenOuter, distance);
+  if (flat < 1) h += ridgeHeightAt(x, z, config);
 
   // Two broad hills away from the field, for cross-country options.
   h += 330 * Math.exp(-((x - 4300) ** 2 + (z - 700) ** 2) / (2 * 1900 * 1900));
@@ -40,11 +37,73 @@ export function baseHeightAt(x: number, z: number, config: WorldConfig): number 
   h += 16 * (fbm2D(x * 0.0035, z * 0.0035, 4, seed + 31) - 0.5) * 2;
 
   // Flat, usable airfield.
-  const distance = Math.sqrt(x * x + z * z);
-  const flat = 1 - smoothstep(config.fieldFlattenInner, config.fieldFlattenOuter, distance);
   h = lerp(h, config.fieldElevation, flat);
 
   return Math.max(240, h);
+}
+
+/**
+ * Height added by the hand-placed ridge chain. Each bank has a tapered plateau
+ * along its local X axis, a Gaussian cross-section, a meandering crest and ends
+ * that fall smoothly into the col, so the chain reads as separate spurs rather
+ * than one infinite wall.
+ */
+export function ridgeHeightAt(x: number, z: number, config: WorldConfig): number {
+  let total = 0;
+  for (const ridge of RIDGE_FRAMES) {
+    const height = ridgeContribution(ridge, x, z, config);
+    if (height > 0) total += height;
+  }
+  return total;
+}
+
+interface RidgeFrame extends RidgeSpec {
+  cos: number;
+  sin: number;
+  half: number;
+}
+
+/** Trigonometry and half-lengths are fixed, so work them out once. */
+const RIDGE_FRAMES: RidgeFrame[] = RIDGES.map((ridge) => ({
+  ...ridge,
+  cos: Math.cos(ridge.yaw),
+  sin: Math.sin(ridge.yaw),
+  half: ridge.length / 2,
+}));
+
+function ridgeContribution(
+  ridge: RidgeFrame,
+  x: number,
+  z: number,
+  config: WorldConfig,
+): number {
+  const dx = x - ridge.x;
+  const dz = z - ridge.z;
+  // Local frame: lx runs along the crest, lz across it.
+  const lx = dx * ridge.cos - dz * ridge.sin;
+  const lz = dx * ridge.sin + dz * ridge.cos;
+
+  const along = 1 - smoothstep(ridge.half - ridge.taper, ridge.half, Math.abs(lx));
+  if (along <= 0) return 0;
+
+  // Beyond three widths the Gaussian is below 1%, and the crest meander can
+  // never bring the bank that far back. Reject before the noise calls.
+  if (Math.abs(lz) > ridge.halfWidth * 3 + 300) return 0;
+
+  // One noise sample drives both the sideways meander of the crest and its
+  // height variation, so high points lean in the same direction as the spurs.
+  const variation = valueNoise2D(
+    lx * 0.0006 + ridge.seed,
+    ridge.seed,
+    config.seed + 23,
+  );
+  const bend = 260 * (variation - 0.5) * 2;
+  const offset = lz - bend;
+  const cross = Math.exp(-(offset * offset) / (2 * ridge.halfWidth * ridge.halfWidth));
+  if (cross < 0.01) return 0;
+
+  const crest = 1 + ridge.roughness * (variation - 0.5) * 2;
+  return ridge.height * cross * along * crest;
 }
 
 // ---------------------------------------------------------------------------

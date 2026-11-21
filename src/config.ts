@@ -198,6 +198,73 @@ export const WORLD: WorldConfig = {
 };
 
 /**
+ * One hand-placed ridge in the home landscape. `yaw` rotates the crest about
+ * Y (0 runs east-west, π/2 north-south), the cross-section is Gaussian, and
+ * the ends taper so a chain reads as spurs and cols rather than a wall.
+ */
+export interface RidgeSpec {
+  /** Centre of the crest in world XZ. */
+  x: number;
+  z: number;
+  /** Length of the crest along its local X axis. */
+  length: number;
+  /** Gaussian half-width across the ridge. */
+  halfWidth: number;
+  /** Height added at the crest before the crest noise. */
+  height: number;
+  /** Rotation about Y, radians. */
+  yaw: number;
+  /** Length of each tapered end. */
+  taper: number;
+  /** Seed offset for the crest noise and the lateral meander. */
+  seed: number;
+  /** Crest variation as a fraction of `height`. */
+  roughness: number;
+}
+
+/**
+ * The training ridges. They sit north of the airfield in a broken chain with
+ * real cols between the segments, so ridge soaring means working one bank,
+ * crossing a saddle, and committing to the next. The central bank is the
+ * long working line; the outer two are short, higher-shouldered spurs.
+ */
+export const RIDGES: RidgeSpec[] = [
+  {
+    x: -7200,
+    z: -2600,
+    length: 5200,
+    halfWidth: 760,
+    height: 520,
+    yaw: 0.06,
+    taper: 1400,
+    seed: 3.1,
+    roughness: 0.17,
+  },
+  {
+    x: 0,
+    z: -2950,
+    length: 6600,
+    halfWidth: 780,
+    height: 640,
+    yaw: -0.03,
+    taper: 1500,
+    seed: 9.4,
+    roughness: 0.2,
+  },
+  {
+    x: 7200,
+    z: -2650,
+    length: 5400,
+    halfWidth: 720,
+    height: 540,
+    yaw: 0.07,
+    taper: 1400,
+    seed: 17.2,
+    roughness: 0.17,
+  },
+];
+
+/**
  * Aerotow. The tug is a deterministic scripted departure, not a second
  * simulated body: it rolls, turns, and climbs on rails, while the glider is
  * pulled by a spring-damper rope and flown by the player.
