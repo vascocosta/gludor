@@ -1,6 +1,8 @@
 export class KeyboardInput {
   private readonly down = new Set<string>();
   private readonly pressed = new Set<string>();
+  /** Presses that arrived with Shift held, remembered until consumed. */
+  private readonly shifted = new Set<string>();
 
   constructor() {
     window.addEventListener("keydown", this.onKeyDown);
@@ -22,7 +24,10 @@ export class KeyboardInput {
     ) {
       event.preventDefault();
     }
-    if (!event.repeat && !this.down.has(code)) this.pressed.add(code);
+    if (!event.repeat && !this.down.has(code)) {
+      this.pressed.add(code);
+      if (event.shiftKey) this.shifted.add(code);
+    }
     this.down.add(code);
   };
 
@@ -33,6 +38,7 @@ export class KeyboardInput {
   private readonly clear = (): void => {
     this.down.clear();
     this.pressed.clear();
+    this.shifted.clear();
   };
 
   isDown(code: string): boolean {
@@ -43,6 +49,19 @@ export class KeyboardInput {
     if (!this.pressed.has(code)) return false;
     this.pressed.delete(code);
     return true;
+  }
+
+  /**
+   * Consume a press and report whether Shift was down when it happened. The
+   * modifier is captured at keydown, so a quick tap still counts even if
+   * Shift is released before the next frame.
+   */
+  consumeShifted(code: string): boolean {
+    if (!this.pressed.has(code)) return false;
+    this.pressed.delete(code);
+    const shifted = this.shifted.has(code);
+    this.shifted.delete(code);
+    return shifted;
   }
 
   get pitch(): number {

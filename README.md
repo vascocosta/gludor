@@ -170,8 +170,8 @@ npm run preview # serve the production build locally
 | `F2` | Toggle flight assist (auto-rudder; on by default) |
 | `F3` | Debug telemetry overlay |
 | `F4` | Thermal helpers (particles and core cue) |
-| `M` | Mute audio |
-| `N` | Ambient music on / off (off by default) |
+| `M` | Ambient music on / off (off by default) |
+| `Shift` + `S` | Sound effects on / off (music unaffected) |
 
 On the menu, **Enter** starts the selected flight.
 
@@ -349,7 +349,7 @@ aerotow tug and its spinning propeller, and thermal particles. The HUD is a
 separate 2D canvas with vector-drawn instruments. Audio is synthesized with
 WebAudio: filtered wind noise scaled by IAS, vario lift beeps and a low sink
 tone, a stall horn, a landing thump, and a filtered engine drone while the tug
-is on the rope. An optional generative score (`N`) picks a new key and tempo
+is on the rope. An optional generative score (`M`) picks a new key and tempo
 for each flight and plays an A A' B A' form: a breathing five-voice pad, a
 pentatonic melody and chord-tone bells locked to a swung eighth-note grid, over
 a soft brushed downtempo pulse; it is off by default.

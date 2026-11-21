@@ -190,12 +190,20 @@ function handleHotkeys(): void {
     return;
   }
 
+  // Music and effects are separate buses: M leaves the sound effects alone,
+  // Shift+S leaves the score alone.
+  if (keyboard.consume("KeyM") && (appState === "flying" || appState === "paused")) {
+    const music = audio.toggleMusic();
+    simulation.showMessage(music ? "Ambient music on" : "Ambient music off", 1.8);
+  }
+
+  if (keyboard.consumeShifted("KeyS")) {
+    const muted = audio.toggleSound();
+    simulation.showMessage(muted ? "Sound off" : "Sound on", 1.6);
+  }
+
   if (freeCamera) {
     if (keyboard.consume("Escape")) exitFreeCamera();
-    if (keyboard.consume("KeyM")) {
-      const muted = audio.toggleMute();
-      simulation.showMessage(muted ? "Audio muted" : "Audio on", 1.6);
-    }
     return;
   }
 
@@ -229,19 +237,6 @@ function handleHotkeys(): void {
 
   if (keyboard.consume("KeyR") && appState !== "menu") {
     restartFlight();
-  }
-
-  if (keyboard.consume("KeyM")) {
-    const muted = audio.toggleMute();
-    simulation.showMessage(muted ? "Audio muted" : "Audio on", 1.6);
-  }
-
-  if (
-    keyboard.consume("KeyN") &&
-    (appState === "flying" || appState === "paused")
-  ) {
-    const music = audio.toggleMusic();
-    simulation.showMessage(music ? "Ambient music on" : "Ambient music off", 1.8);
   }
 
   if (keyboard.consume("F2") && appState !== "menu") {

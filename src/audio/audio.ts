@@ -52,7 +52,7 @@ const MUSIC_STEP_SECONDS = 30 / 72;
 /** Small WebAudio soundscape: wind, vario beeps, a stall horn and a thud. */
 export class AudioEngine {
   private context: AudioContext | null = null;
-  private master: GainNode | null = null;
+  private sfxGain: GainNode | null = null;
   private windGain: GainNode | null = null;
   private windFilter: BiquadFilterNode | null = null;
   private stallGain: GainNode | null = null;
@@ -73,7 +73,7 @@ export class AudioEngine {
   private musicBeatStep = 0;
   private noiseBuffer: AudioBuffer | null = null;
   private beepClock = 0;
-  private muted = false;
+  private sfxMuted = false;
   private active = false;
 
   start(): void {
@@ -91,9 +91,15 @@ export class AudioEngine {
       this.context = context;
 
       const master = context.createGain();
-      master.gain.value = this.muted ? 0 : 0.55;
+      master.gain.value = 0.55;
       master.connect(context.destination);
-      this.master = master;
+
+      // Effects share a bus of their own so they can be silenced without
+      // touching the ambient score, which connects straight to the master.
+      const sfxGain = context.createGain();
+      sfxGain.gain.value = this.sfxMuted ? 0 : 1;
+      sfxGain.connect(master);
+      this.sfxGain = sfxGain;
 
       const buffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
       this.noiseBuffer = buffer;
@@ -118,7 +124,7 @@ export class AudioEngine {
       windGain.gain.value = 0;
       source.connect(filter);
       filter.connect(windGain);
-      windGain.connect(master);
+      windGain.connect(sfxGain);
       source.start();
 
       this.windFilter = filter;
@@ -130,7 +136,7 @@ export class AudioEngine {
       const stallGain = context.createGain();
       stallGain.gain.value = 0;
       stallOscillator.connect(stallGain);
-      stallGain.connect(master);
+      stallGain.connect(sfxGain);
       stallOscillator.start();
       this.stallGain = stallGain;
 
@@ -146,7 +152,7 @@ export class AudioEngine {
       sinkGain.gain.value = 0;
       sinkOscillator.connect(sinkFilter);
       sinkFilter.connect(sinkGain);
-      sinkGain.connect(master);
+      sinkGain.connect(sfxGain);
       sinkOscillator.start();
       this.sinkOscillator = sinkOscillator;
       this.sinkGain = sinkGain;
@@ -163,7 +169,7 @@ export class AudioEngine {
       towGain.gain.value = 0;
       towOscillator.connect(towFilter);
       towFilter.connect(towGain);
-      towGain.connect(master);
+      towGain.connect(sfxGain);
       towOscillator.start();
       this.towOscillator = towOscillator;
       this.towGain = towGain;
@@ -292,20 +298,28 @@ export class AudioEngine {
     this.applyChord(0);
   }
 
-  toggleMute(): boolean {
-    this.muted = !this.muted;
-    if (this.context && this.master) {
-      this.master.gain.setTargetAtTime(this.muted ? 0 : 0.55, this.context.currentTime, 0.05);
+  /**
+   * Toggle the effects mix (wind, vario, stall, tug, touchdown) without
+   * touching the ambient score, which has its own toggle.
+   */
+  toggleSound(): boolean {
+    this.sfxMuted = !this.sfxMuted;
+    if (this.context && this.sfxGain) {
+      this.sfxGain.gain.setTargetAtTime(
+        this.sfxMuted ? 0 : 1,
+        this.context.currentTime,
+        0.05,
+      );
     }
-    return this.muted;
+    return this.sfxMuted;
   }
 
-  get isMuted(): boolean {
-    return this.muted;
+  get isSoundMuted(): boolean {
+    return this.sfxMuted;
   }
 
   update(sim: Simulation, dt: number): void {
-    if (!this.context || !this.active || this.muted) return;
+    if (!this.context || !this.active) return;
     const now = this.context.currentTime;
     if (this.musicEnabled) this.updateMusic(dt);
 
@@ -363,7 +377,7 @@ export class AudioEngine {
   }
 
   landingThump(crashed: boolean): void {
-    if (!this.context || !this.active || this.muted) return;
+    if (!this.context || !this.sfxGain || !this.active) return;
     const now = this.context.currentTime;
     const oscillator = this.context.createOscillator();
     oscillator.type = "sine";
@@ -373,14 +387,14 @@ export class AudioEngine {
     gain.gain.setValueAtTime(crashed ? 0.35 : 0.16, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
     oscillator.connect(gain);
-    gain.connect(this.master!);
+    gain.connect(this.sfxGain);
     oscillator.start(now);
     oscillator.stop(now + 0.4);
   }
 
   /** A soft water arrival: damped noise over a low body thump. */
   splash(): void {
-    if (!this.context || !this.master || !this.active || this.muted) return;
+    if (!this.context || !this.sfxGain || !this.active) return;
     const now = this.context.currentTime;
 
     if (this.noiseBuffer) {
@@ -396,7 +410,7 @@ export class AudioEngine {
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
       source.connect(filter);
       filter.connect(gain);
-      gain.connect(this.master);
+      gain.connect(this.sfxGain);
       source.start(now);
       source.stop(now + 0.6);
     }
@@ -409,7 +423,7 @@ export class AudioEngine {
     gain.gain.setValueAtTime(0.2, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
     oscillator.connect(gain);
-    gain.connect(this.master);
+    gain.connect(this.sfxGain);
     oscillator.start(now);
     oscillator.stop(now + 0.36);
   }
@@ -664,7 +678,7 @@ export class AudioEngine {
   }
 
   private beep(frequency: number, duration: number, volume: number): void {
-    if (!this.context || !this.master) return;
+    if (!this.context || !this.sfxGain) return;
     const now = this.context.currentTime;
     const oscillator = this.context.createOscillator();
     oscillator.type = "sine";
@@ -674,7 +688,7 @@ export class AudioEngine {
     gain.gain.exponentialRampToValueAtTime(volume, now + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     oscillator.connect(gain);
-    gain.connect(this.master);
+    gain.connect(this.sfxGain);
     oscillator.start(now);
     oscillator.stop(now + duration + 0.02);
   }
