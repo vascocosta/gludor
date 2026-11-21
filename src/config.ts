@@ -226,39 +226,40 @@ export interface RidgeSpec {
  * The training ridges. They sit north of the airfield in a broken chain with
  * real cols between the segments, so ridge soaring means working one bank,
  * crossing a saddle, and committing to the next. The central bank is the
- * long working line; the outer two are short, higher-shouldered spurs.
+ * long working line, almost 15 km end to end; the outer two are short spurs
+ * a col beyond each end.
  */
 export const RIDGES: RidgeSpec[] = [
   {
-    x: -7200,
+    x: -11_800,
     z: -2600,
-    length: 5200,
+    length: 6000,
     halfWidth: 760,
     height: 520,
     yaw: 0.06,
-    taper: 1400,
+    taper: 1600,
     seed: 3.1,
     roughness: 0.17,
   },
   {
     x: 0,
     z: -2950,
-    length: 6600,
+    length: 15_000,
     halfWidth: 780,
     height: 640,
     yaw: -0.03,
-    taper: 1500,
+    taper: 2600,
     seed: 9.4,
     roughness: 0.2,
   },
   {
-    x: 7200,
+    x: 11_800,
     z: -2650,
-    length: 5400,
+    length: 6000,
     halfWidth: 720,
     height: 540,
     yaw: 0.07,
-    taper: 1400,
+    taper: 1600,
     seed: 17.2,
     roughness: 0.17,
   },

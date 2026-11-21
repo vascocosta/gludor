@@ -97,13 +97,13 @@ describe("mountains", () => {
 
     // Real cols separate the banks, so the chain is not one unbroken wall.
     const crest = terrainHeightAt(0, -2950, WORLD);
-    expect(terrainHeightAt(-3950, -2750, WORLD)).toBeLessThan(crest - 250);
+    expect(terrainHeightAt(-8150, -2750, WORLD)).toBeLessThan(crest - 250);
 
     // Past the outer banks, only ordinary ground remains once the random
     // mountains are subtracted.
     let farHigh = -Infinity;
     for (let x = -30_000; x <= 30_000; x += 500) {
-      if (Math.abs(x) < 11_000) continue;
+      if (Math.abs(x) < 16_000) continue;
       const ridge = terrainHeightAt(x, -2850, WORLD) - mountainHeightAt(x, -2850, WORLD);
       farHigh = Math.max(farHigh, ridge);
     }
