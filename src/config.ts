@@ -340,6 +340,11 @@ export const FREE_CAMERA = {
 export const COCKPIT_VIEW = {
   eyeHeight: 0.64,
   eyeForward: -0.65,
+  /**
+   * Uniform scale for the dash, instrument panel, centre console, switches and
+   * stick, anchored at the console base. 1 is the modelled size; try 0.85-1.2.
+   */
+  consoleScale: 1,
 } as const;
 
 /** Streaming and procedural-content constants shared by the simulation and renderer. */

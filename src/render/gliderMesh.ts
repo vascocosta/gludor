@@ -23,6 +23,7 @@ import {
   Vector3,
 } from "three";
 import { mulberry32 } from "../core/rng";
+import { COCKPIT_VIEW } from "../config";
 
 /** Pearl-white gelcoat, cobalt trim, and navy detail on the blue parts. */
 const PEARL = new Color(0xf4f5ef);
@@ -1319,10 +1320,25 @@ export class GliderMesh {
     // glare shield stay square to each other. The dash is a T-shaped moulding;
     // its rounded inner corners leave knee space either side of the centre
     // console.
+    //
+    // Dash, dials, tunnel, switches and stick all hang off one console group,
+    // pivoted at the console base, so COCKPIT_VIEW.consoleScale can resize the
+    // whole console as a unit without unseating it from the floor.
+    const cockpitConsole = new Group();
+    const consolePivot = new Vector3(0, 0.34, -1.02);
+    cockpitConsole.position.copy(consolePivot);
+    this.body.add(cockpitConsole);
+    const addToConsole = (...objects: Array<Mesh | Group>): void => {
+      for (const object of objects) {
+        object.position.sub(consolePivot);
+        cockpitConsole.add(object);
+      }
+    };
+
     const dashboard = new Group();
     dashboard.position.set(0, 0.452, -1.3);
     dashboard.rotation.x = -0.3;
-    this.body.add(dashboard);
+    addToConsole(dashboard);
 
     const dashGeometry = new ExtrudeGeometry(createDashShape(), {
       depth: 0.1,
@@ -1360,18 +1376,18 @@ export class GliderMesh {
     // Centre console running back from the dash between the knees. Baked
     // contact shadows on the deck either side make it sit down into the floor.
     const centreConsole = new Mesh(createConsoleGeometry(), consoleMaterial);
-    this.body.add(centreConsole);
+    addToConsole(centreConsole);
 
     const trimSwitchBase = new Mesh(
       new CylinderGeometry(0.017, 0.018, 0.008, 12),
       coamingMaterial,
     );
     trimSwitchBase.position.set(-0.045, 0.389, -1.03);
-    this.body.add(trimSwitchBase);
+    addToConsole(trimSwitchBase);
 
     const trimSwitch = new Mesh(new CylinderGeometry(0.011, 0.013, 0.012, 12), redMaterial);
     trimSwitch.position.set(-0.045, 0.398, -1.03);
-    this.body.add(trimSwitch);
+    addToConsole(trimSwitch);
 
     // Airbrake lever alongside the guarded switch.
     const brakeLeverBase = new Mesh(
@@ -1379,32 +1395,32 @@ export class GliderMesh {
       coamingMaterial,
     );
     brakeLeverBase.position.set(0.048, 0.384, -1.09);
-    this.body.add(brakeLeverBase);
+    addToConsole(brakeLeverBase);
 
     const brakeLever = new Mesh(new CylinderGeometry(0.0035, 0.004, 0.055, 6), metalMaterial);
     brakeLever.position.set(0.048, 0.409, -1.086);
     brakeLever.rotation.x = 0.3;
-    this.body.add(brakeLever);
+    addToConsole(brakeLever);
 
     const brakeKnob = new Mesh(new SphereGeometry(0.009, 10, 8), navyMaterial);
     brakeKnob.position.set(0.048, 0.435, -1.078);
-    this.body.add(brakeKnob);
+    addToConsole(brakeKnob);
 
     // Centre stick: mounted on the tunnel between the knees inside a rubber
     // boot, with the grip finishing below the instrument panel.
     const stickBoot = new Mesh(new CylinderGeometry(0.014, 0.03, 0.036, 12), coamingMaterial);
     stickBoot.position.set(0, 0.414, -0.9);
-    this.body.add(stickBoot);
+    addToConsole(stickBoot);
 
     const stick = new Mesh(new CylinderGeometry(0.007, 0.009, 0.06, 12), darkMaterial);
     stick.position.set(0, 0.445, -0.9);
-    this.body.add(stick);
+    addToConsole(stick);
 
     // Shaped rubber grip with finger swells and a red radio/PTT button on top.
     const gripGroup = new Group();
     gripGroup.position.set(0, 0.49, -0.9);
     gripGroup.rotation.x = 0.14;
-    this.body.add(gripGroup);
+    addToConsole(gripGroup);
 
     const grip = new Mesh(createStickGripGeometry(), gripMaterial);
     grip.scale.set(0.95, 1, 1.15);
@@ -1444,6 +1460,8 @@ export class GliderMesh {
     radioCap.scale.set(1, 0.45, 1);
     radioCap.position.set(0, 0.048, 0);
     gripGroup.add(radioCap);
+
+    cockpitConsole.scale.setScalar(COCKPIT_VIEW.consoleScale);
 
     const seat = new Mesh(new BoxGeometry(0.3, 0.22, 0.07), interiorMaterial);
     seat.position.set(0, 0.2, 0.04);
