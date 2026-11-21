@@ -73,6 +73,7 @@ function startFlight(weather: WeatherSettings, launch: LaunchType): void {
   landingAudioPlayed = false;
   appState = "flying";
   audio.start();
+  audio.startScore();
   audio.setActive(true);
 }
 

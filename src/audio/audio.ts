@@ -3,9 +3,11 @@ import type { Simulation } from "../sim/simulation";
 
 interface MusicVoice {
   oscillator: OscillatorNode;
+  gain: GainNode;
+  baseGain: number;
 }
 
-/** Slow chords for the ambient bed, from the bass up. */
+/** Slow chords for the ambient bed, from the bass up, rooted on D. */
 const MUSIC_CHORDS = [
   [73.42, 146.83, 220.0, 293.66, 349.23], // Dm(add9)
   [116.54, 174.61, 233.08, 293.66, 349.23], // B-flat major
@@ -22,13 +24,30 @@ const MUSIC_CHORDS = [
 ];
 /** D-minor pentatonic notes for the melody. */
 const MUSIC_PENTATONIC = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33];
-/** Higher pentatonic notes for the sparse bells. */
-const MUSIC_BELLS = [587.33, 783.99, 880.0, 1046.5];
+/**
+ * Chord progressions as indexes into MUSIC_CHORDS: i-VI-III-VII, a coloured
+ * variant of it, and i-iv-VI-V. The score plays them as an A A' B A' form.
+ */
+const MUSIC_PROGRESSIONS = [
+  [0, 1, 2, 3],
+  [6, 7, 8, 9],
+  [6, 10, 7, 11],
+] as const;
+const MUSIC_FORM = [0, 1, 2, 1] as const;
+/** One chord per two bars, four chords per phrase. */
+const MUSIC_STEPS_PER_CHORD = 16;
+const MUSIC_PHRASE_CHORDS = 4;
+const MUSIC_FORM_CHORDS = MUSIC_PHRASE_CHORDS * MUSIC_FORM.length;
+const MUSIC_FORM_BARS = (MUSIC_FORM_CHORDS * MUSIC_STEPS_PER_CHORD) / 16;
+/** Each flight gets a fresh key: D, A, E or G minor. */
+const MUSIC_KEYS = [0, -5, 2, 5];
+const MUSIC_BPM_MIN = 68;
+const MUSIC_BPM_MAX = 76;
+/** Share of the beat given to the onbeat eighth, for a gentle swing. */
+const MUSIC_SWING = 0.58;
 const MUSIC_LEVEL = 1.1;
-/** Soft downtempo pulse: eighth-note steps at 72 BPM. */
+/** Fallback eighth-note length before the first flight picks a tempo. */
 const MUSIC_STEP_SECONDS = 30 / 72;
-/** Change chord every two bars so the harmony lands on the pulse. */
-const MUSIC_CHORD_SECONDS = MUSIC_STEP_SECONDS * 16;
 
 /** Small WebAudio soundscape: wind, vario beeps, a stall horn and a thud. */
 export class AudioEngine {
@@ -46,12 +65,11 @@ export class AudioEngine {
   private musicDelay: DelayNode | null = null;
   private musicVoices: MusicVoice[] = [];
   private musicEnabled = false;
-  private musicStep = 0;
-  private musicChordClock = 0;
-  private musicBellClock = 6;
-  private musicMelodyClock = 2;
+  private musicStepClock = 0;
+  private musicStepSeconds = MUSIC_STEP_SECONDS;
+  private musicPitchRatio = 1;
+  private musicChord: readonly number[] = MUSIC_CHORDS[0];
   private musicMelodyIndex = 2;
-  private musicBeatClock = 0;
   private musicBeatStep = 0;
   private noiseBuffer: AudioBuffer | null = null;
   private beepClock = 0;
@@ -206,7 +224,7 @@ export class AudioEngine {
         gain.connect(panner);
         panner.connect(musicFilter);
         oscillator.start();
-        return { oscillator };
+        return { oscillator, gain, baseGain };
       });
 
       // A short feedback delay gives the bells a little room without needing
@@ -256,6 +274,22 @@ export class AudioEngine {
       );
     }
     return this.musicEnabled;
+  }
+
+  /**
+   * Fresh key and tempo for a new flight, with the score back at the top of
+   * the form. Safe before the audio context exists; the settings apply once
+   * it does.
+   */
+  startScore(): void {
+    const key = MUSIC_KEYS[Math.floor(Math.random() * MUSIC_KEYS.length)];
+    this.musicPitchRatio = 2 ** (key / 12);
+    this.musicStepSeconds =
+      30 / (MUSIC_BPM_MIN + Math.random() * (MUSIC_BPM_MAX - MUSIC_BPM_MIN));
+    this.musicStepClock = 0;
+    this.musicBeatStep = 0;
+    this.musicMelodyIndex = 2;
+    this.applyChord(0);
   }
 
   toggleMute(): boolean {
@@ -380,83 +414,130 @@ export class AudioEngine {
     oscillator.stop(now + 0.36);
   }
 
-  /** Advance the ambient score: slow chord changes and occasional bells. */
+  /** Advance the ambient score on a single swung eighth-note grid. */
   private updateMusic(dt: number): void {
     if (!this.context || !this.musicGain) return;
 
-    this.musicChordClock += dt;
-    if (this.musicChordClock >= MUSIC_CHORD_SECONDS) {
-      this.musicChordClock -= MUSIC_CHORD_SECONDS;
-      this.musicStep = (this.musicStep + 1) % MUSIC_CHORDS.length;
-      const now = this.context.currentTime;
-      const chord = MUSIC_CHORDS[this.musicStep];
-      for (let i = 0; i < this.musicVoices.length; i++) {
-        const frequency = chord[i] ?? chord[0];
-        // Glide into the next chord rather than stepping to it.
-        this.musicVoices[i].oscillator.frequency.setTargetAtTime(frequency, now, 0.7);
-      }
-      if (this.musicPadGain) {
-        // Dip and swell around each change so the pad has a pulse of its own.
-        this.musicPadGain.gain.setTargetAtTime(0.55, now, 0.2);
-        this.musicPadGain.gain.setTargetAtTime(1, now + 1, 0.7);
-      }
+    this.musicStepClock += dt;
+    // Cap the catch-up after a long frame so a stall never dumps a burst of
+    // notes into one instant.
+    let steps = 0;
+    while (this.musicStepClock >= this.stepSeconds(this.musicBeatStep) && steps < 4) {
+      this.musicStepClock -= this.stepSeconds(this.musicBeatStep);
+      this.musicStep();
+      steps++;
+    }
+    if (steps === 4) this.musicStepClock = 0;
+  }
+
+  /** Length of one eighth-note step, with the odd step shortened for swing. */
+  private stepSeconds(step: number): number {
+    const pair = this.musicStepSeconds * 2;
+    return pair * (step % 2 === 0 ? MUSIC_SWING : 1 - MUSIC_SWING);
+  }
+
+  /** One step of the score: harmony, bells, melody and pulse all share it. */
+  private musicStep(): void {
+    const step = this.musicBeatStep;
+    this.musicBeatStep++;
+
+    if (step % MUSIC_STEPS_PER_CHORD === 0) {
+      this.applyChord(Math.floor(step / MUSIC_STEPS_PER_CHORD) % MUSIC_FORM_CHORDS);
     }
 
-    this.musicBellClock -= dt;
-    if (this.musicBellClock <= 0) {
-      this.musicBellClock = 10 + Math.random() * 8;
-      const frequency = MUSIC_BELLS[Math.floor(Math.random() * MUSIC_BELLS.length)];
-      this.musicBell(frequency);
+    // Bells land on bar lines and borrow a tone from the current chord.
+    if (step % 16 === 0 && Math.random() < 0.22) {
+      const chord = this.musicChord;
+      const tone = chord[2 + Math.floor(Math.random() * 3)] ?? chord[chord.length - 1];
+      this.musicBell(tone * 2 * this.musicPitchRatio);
     }
 
-    // A slow pentatonic melody wanders over the pad. It prefers stepwise
-    // motion, leaves rests, and occasionally jumps an octave.
-    this.musicMelodyClock -= dt;
-    if (this.musicMelodyClock <= 0) {
-      this.musicMelodyClock = 0.9 + Math.random() * 1.1;
-      if (Math.random() > 0.18) {
-        const steps = [-2, -1, -1, 0, 1, 1, 2];
-        const step = steps[Math.floor(Math.random() * steps.length)];
-        this.musicMelodyIndex = clamp(
-          this.musicMelodyIndex + step,
-          0,
-          MUSIC_PENTATONIC.length - 1,
-        );
-        let frequency = MUSIC_PENTATONIC[this.musicMelodyIndex];
-        if (Math.random() < 0.12 && this.musicMelodyIndex <= 3) frequency *= 2;
-        this.musicNote(frequency, 0.16 + Math.random() * 0.07, 1.2 + Math.random() * 1.4);
-      }
+    // A pentatonic melody on the eighth grid: denser on the beat, and the last
+    // bar of each phrase is left open so the line breathes.
+    const phraseSteps = MUSIC_PHRASE_CHORDS * MUSIC_STEPS_PER_CHORD;
+    const inPhrase = step % phraseSteps;
+    const phraseEnd = inPhrase >= phraseSteps - MUSIC_STEPS_PER_CHORD;
+    if (!phraseEnd) {
+      const density = step % 2 === 0 ? 0.38 : 0.13;
+      if (Math.random() < density) this.musicMelody();
     }
 
-    this.musicBeatClock += dt;
-    while (this.musicBeatClock >= MUSIC_STEP_SECONDS) {
-      this.musicBeatClock -= MUSIC_STEP_SECONDS;
-      this.musicBeat(this.musicBeatStep % 16);
-      this.musicBeatStep++;
+    this.musicBeat(step);
+  }
+
+  /** Move the pad to a chord slot in the A A' B A' form. */
+  private applyChord(slot: number): void {
+    const phrase = MUSIC_FORM[Math.floor(slot / MUSIC_PHRASE_CHORDS) % MUSIC_FORM.length];
+    const chord = MUSIC_CHORDS[MUSIC_PROGRESSIONS[phrase][slot % MUSIC_PHRASE_CHORDS]];
+    this.musicChord = chord;
+    if (!this.context) return;
+    const now = this.context.currentTime;
+
+    for (let i = 0; i < this.musicVoices.length; i++) {
+      const voice = this.musicVoices[i];
+      const frequency = (chord[i] ?? chord[0]) * this.musicPitchRatio;
+      voice.oscillator.frequency.setTargetAtTime(frequency, now + i * 0.015, 0.4);
+      // Re-attack each voice, staggered from the bass up, so the change
+      // articulates instead of smearing from one chord into the next.
+      voice.gain.gain.setTargetAtTime(voice.baseGain * 0.7, now + i * 0.02, 0.06);
+      voice.gain.gain.setTargetAtTime(voice.baseGain, now + 0.14 + i * 0.02, 0.45);
     }
+
+    if (this.musicPadGain) {
+      // Dip and swell around each change so the pad has a pulse of its own.
+      this.musicPadGain.gain.setTargetAtTime(0.75, now, 0.12);
+      this.musicPadGain.gain.setTargetAtTime(1, now + 0.4, 0.8);
+    }
+  }
+
+  /** One pentatonic note, preferring stepwise motion with the odd octave leap. */
+  private musicMelody(): void {
+    const steps = [-2, -1, -1, 0, 1, 1, 2];
+    const move = steps[Math.floor(Math.random() * steps.length)];
+    this.musicMelodyIndex = clamp(
+      this.musicMelodyIndex + move,
+      0,
+      MUSIC_PENTATONIC.length - 1,
+    );
+    let frequency = MUSIC_PENTATONIC[this.musicMelodyIndex] * this.musicPitchRatio;
+    if (Math.random() < 0.12 && this.musicMelodyIndex <= 3) frequency *= 2;
+    this.musicNote(frequency, 0.13 + Math.random() * 0.05, 0.8 + Math.random() * 0.8);
   }
 
   /** One bar of the soft downtempo pulse. */
   private musicBeat(step: number): void {
-    switch (step) {
-      case 0:
-      case 8:
-        this.musicKick(0.5);
-        break;
-      case 4:
-      case 12:
-        this.musicKick(0.32);
-        break;
-      case 11:
-        // A ghost kick on the second bar keeps the pulse from feeling square.
-        this.musicKick(0.2);
-        break;
+    const bar = step % 16;
+    const formBar = Math.floor(step / 16) % MUSIC_FORM_BARS;
+    const lastBar = formBar === MUSIC_FORM_BARS - 1;
+
+    if (!lastBar) {
+      switch (bar) {
+        case 0:
+        case 8:
+          this.musicKick(0.5);
+          break;
+        case 4:
+        case 12:
+          this.musicKick(0.32);
+          break;
+        case 11:
+          // A ghost kick on the second bar keeps the pulse from feeling square.
+          this.musicKick(0.2);
+          break;
+      }
     }
 
-    if (step === 2 || step === 10) this.musicBrush(0.11);
-    if (step === 6 || step === 14) this.musicBrush(0.09);
+    if (bar === 2 || bar === 10) this.musicBrush(0.11);
+    if (bar === 6 || bar === 14) this.musicBrush(0.09);
 
-    if (step % 2 === 1) this.musicShaker(0.024, step % 4 === 1 ? -0.5 : 0.5);
+    // The closing bar of the form opens up: no kick, brushes pulling into the
+    // next A section.
+    if (lastBar && (bar === 12 || bar === 14)) this.musicBrush(0.14);
+
+    // A short gap in the shaker now and then keeps the groove from locking.
+    if (bar % 2 === 1 && Math.random() > 0.12) {
+      this.musicShaker(0.024, bar % 4 === 1 ? -0.5 : 0.5);
+    }
   }
 
   /** A soft rounded kick. */
@@ -468,7 +549,8 @@ export class AudioEngine {
     oscillator.frequency.setValueAtTime(115, now);
     oscillator.frequency.exponentialRampToValueAtTime(42, now + 0.22);
     const gain = this.context.createGain();
-    gain.gain.setValueAtTime(level, now);
+    // Humanise the level slightly so the bar never sounds machine-tight.
+    gain.gain.setValueAtTime(level * (0.9 + Math.random() * 0.2), now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
     oscillator.connect(gain);
     gain.connect(this.musicGain);
@@ -487,7 +569,7 @@ export class AudioEngine {
     filter.frequency.value = 1700;
     filter.Q.value = 0.7;
     const gain = this.context.createGain();
-    gain.gain.setValueAtTime(level, now);
+    gain.gain.setValueAtTime(level * (0.85 + Math.random() * 0.3), now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
     source.connect(filter);
     filter.connect(gain);
@@ -506,7 +588,7 @@ export class AudioEngine {
     filter.type = "highpass";
     filter.frequency.value = 5200;
     const gain = this.context.createGain();
-    gain.gain.setValueAtTime(level, now);
+    gain.gain.setValueAtTime(level * (0.8 + Math.random() * 0.4), now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
     const panner = this.context.createStereoPanner();
     panner.pan.value = pan;

@@ -349,10 +349,10 @@ aerotow tug and its spinning propeller, and thermal particles. The HUD is a
 separate 2D canvas with vector-drawn instruments. Audio is synthesized with
 WebAudio: filtered wind noise scaled by IAS, vario lift beeps and a low sink
 tone, a stall horn, a landing thump, and a filtered engine drone while the tug
-is on the rope. An optional generative ambient score (`N`) adds a breathing
-five-voice pad moving through a twelve-chord progression, a slow pentatonic
-melody, sparse high bells and a soft brushed downtempo pulse; it is off by
-default.
+is on the rope. An optional generative score (`N`) picks a new key and tempo
+for each flight and plays an A A' B A' form: a breathing five-voice pad, a
+pentatonic melody and chord-tone bells locked to a swung eighth-note grid, over
+a soft brushed downtempo pulse; it is off by default.
 
 ## Project layout
 
