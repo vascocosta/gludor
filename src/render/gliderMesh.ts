@@ -22,6 +22,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { smoothstep } from "../core/math";
 import { mulberry32 } from "../core/rng";
 import { COCKPIT_VIEW } from "../config";
 
@@ -350,6 +351,19 @@ const FUSELAGE_PROFILE: Array<[number, number]> = [
   [0.0, 3.06],
 ];
 
+/**
+ * Nose droop applied to the lathe after it is built. It starts at the leading
+ * edge of the canopy and deepens toward the tip: the top line falls about
+ * 12 cm and the section narrows vertically, while the belly drops only a
+ * little, so ground clearance stays comfortable. That buys roughly two
+ * degrees of downward view over the nose, which is what the pilot needs to
+ * keep the aiming point in sight in the flare.
+ */
+const NOSE_DROOP_START = -1.72;
+const NOSE_DROOP_END = -2.8;
+const NOSE_DROOP = 0.09;
+const NOSE_FLATTEN = 0.12;
+
 /** Smooth lathed fuselage with a painted dorsal spine. */
 function createFuselageGeometry(): BufferGeometry {
   const profile = FUSELAGE_PROFILE;
@@ -371,6 +385,21 @@ function createFuselageGeometry(): BufferGeometry {
     colors[i * 3 + 2] = color.b;
   }
   geometry.setAttribute("color", new BufferAttribute(colors, 3));
+
+  // Drop and flatten the nose ahead of the canopy. The blend starts at the
+  // canopy's leading edge, so the sill still meets the fuselage, and reaches
+  // full depth before the tip. Lowering the top line opens the view over the
+  // nose in the flare; the squash keeps the section from reading as a fat
+  // cone, and pulling the belly down slightly stops it looking like a step.
+  for (let i = 0; i < position.count; i++) {
+    const z = position.getZ(i);
+    const t = smoothstep(NOSE_DROOP_START, NOSE_DROOP_END, z);
+    if (t <= 0) continue;
+    const y = position.getY(i);
+    position.setY(i, y * (1 - NOSE_FLATTEN * t) - NOSE_DROOP * t);
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
   return geometry;
 }
 
@@ -1336,7 +1365,9 @@ export class GliderMesh {
     };
 
     const dashboard = new Group();
-    dashboard.position.set(0, 0.452, -1.3);
+    // The panel sits low under the coaming, which keeps the whole horizon and
+    // the aiming point in view when the nose comes up in the flare.
+    dashboard.position.set(0, 0.426, -1.3);
     dashboard.rotation.x = -0.3;
     addToConsole(dashboard);
 
@@ -1813,7 +1844,7 @@ export class GliderMesh {
 
     // Tow hook and pitot: small details that sell the scale.
     const hook = new Mesh(new BoxGeometry(0.05, 0.05, 0.14), darkMaterial);
-    hook.position.set(0, -0.3, -2.45);
+    hook.position.set(0, -0.37, -2.45);
     this.body.add(hook);
 
     const pitot = new Mesh(new CylinderGeometry(0.008, 0.008, 0.42, 6), metalMaterial);

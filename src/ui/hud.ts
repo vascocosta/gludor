@@ -71,6 +71,7 @@ export class Hud {
     // In the cockpit the 3D panel carries the three primary instruments, so
     // the duplicate bottom cluster would only sit on top of it.
     if (!cockpitView || state === "ended") this.drawPanel(sim);
+    if (state === "flying" || state === "paused") this.drawFlareCue(sim, cockpitView);
     this.drawMessage(sim);
     if (thermalHelpers && !sim.onGround) this.drawThermalHelper(sim);
     if (sim.stall > 0.22) this.drawStall(sim);
@@ -228,6 +229,72 @@ export class Hud {
       ctx.fillText(unit, cx + 2, boxY + boxH / 2 + 0.5);
       ctx.restore();
     }
+  }
+
+  /**
+   * Landing flare cue. The coaming and nose hide the near runway once the
+   * glider pitches, so below 20 m the HUD shows height above ground and sink
+   * on a short tape. The green band marks the flare height; a marker still
+   * outside it on a steep approach is the cue to ease back and let the sink
+   * settle without having to find the ground through the nose.
+   */
+  private drawFlareCue(sim: Simulation, cockpitView: boolean): void {
+    if (sim.mode !== "free" || sim.onGround || sim.agl > 20 || sim.agl < 0) return;
+    // Do not flash the cue while climbing away after a low save.
+    if (sim.vario > 0.8 && sim.agl > 6) return;
+
+    const fade = clamp((20 - sim.agl) / 5, 0, 1);
+    if (fade <= 0.01) return;
+
+    const ctx = this.ctx;
+    const w = 196;
+    const h = 72;
+    const x = this.width - w - 22;
+    const y = cockpitView ? this.height - h - 46 : this.height - h - 216;
+
+    const sink = Math.max(0, -sim.vario);
+    const inBand = sim.agl >= 1.2 && sim.agl <= 6;
+    const low = sim.agl < 1.2;
+    const accent = inBand ? GREEN : low ? (sink < 0.6 ? GREEN : AMBER) : CYAN;
+
+    ctx.save();
+    ctx.globalAlpha = fade;
+    this.roundRect(x, y, w, h, 10, "rgba(8,13,17,0.74)", BORDER);
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillStyle = "rgba(143, 227, 242, 0.8)";
+    ctx.fillText("FLARE", x + 14, y + 15);
+
+    ctx.textAlign = "right";
+    ctx.font = "700 18px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillStyle = accent;
+    ctx.fillText(sim.agl.toFixed(1), x + w - 54, y + 15);
+    ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillStyle = "rgba(205, 218, 223, 0.62)";
+    ctx.fillText("m AGL", x + w - 14, y + 16);
+
+    ctx.textAlign = "left";
+    ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillStyle = sink > 2 ? AMBER : "#9fb4bb";
+    ctx.fillText(`SINK ${sink.toFixed(1)} m/s`, x + 14, y + 37);
+
+    const barX = x + 14;
+    const barW = w - 28;
+    const barY = y + 54;
+    const barH = 4;
+    const markX = (agl: number): number => barX + clamp(agl / 20, 0, 1) * barW;
+
+    ctx.fillStyle = "rgba(190, 225, 235, 0.2)";
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = "rgba(125, 223, 149, 0.38)";
+    ctx.fillRect(markX(1.2), barY, markX(6) - markX(1.2), barH);
+    ctx.fillStyle = "rgba(190, 225, 235, 0.35)";
+    for (const mark of [5, 10, 15]) ctx.fillRect(markX(mark), barY - 2, 1, barH + 4);
+    ctx.fillStyle = accent;
+    ctx.fillRect(markX(sim.agl) - 1, barY - 4, 2, barH + 8);
+    ctx.restore();
   }
 
   private drawInfo(x: number, y: number, h: number, sim: Simulation): void {
