@@ -426,7 +426,7 @@ export const FREE_CAMERA = {
  * to sit taller in the seat; `eyeForward` moves the eye fore/aft.
  */
 export const COCKPIT_VIEW = {
-  eyeHeight: 0.65,
+  eyeHeight: 0.75,
   eyeForward: -0.65,
   /**
    * Uniform scale for the dash, instrument panel, centre console, switches and

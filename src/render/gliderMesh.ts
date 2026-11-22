@@ -1530,13 +1530,15 @@ export class GliderMesh {
 
     // Canopy: tinted glass with a dark frame. The glass hides in the cockpit
     // camera so the pilot's eye is never inside it, but the frame is part of
-    // the airframe and stays visible.
+    // the airframe and stays visible. The dome is stretched vertically rather
+    // than raised: its base stays on the fuselage, so the sill and rails still
+    // meet the deck while the pilot's eye gets a taller bubble to see through.
     this.canopy.position.set(0, 0.33, -0.92);
     const glass = new Mesh(
       new SphereGeometry(0.5, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2),
       glassMaterial,
     );
-    glass.scale.set(0.64, 0.78, 1.55);
+    glass.scale.set(0.64, 0.98, 1.55);
     this.canopy.add(glass);
 
     const canopyFrame = new Group();
@@ -1552,7 +1554,7 @@ export class GliderMesh {
       new TorusGeometry(0.5, 0.012, 6, 36, Math.PI),
       coamingMaterial,
     );
-    bow.scale.set(0.63, 0.77, 1);
+    bow.scale.set(0.63, 0.97, 1);
     bow.position.set(0, 0, -0.08);
     canopyFrame.add(bow);
 
@@ -1593,7 +1595,7 @@ export class GliderMesh {
       Math.PI / 2,
     );
     this.cockpitGlass.material = cockpitGlassMaterial;
-    this.cockpitGlass.scale.set(0.64, 0.78, 1.55);
+    this.cockpitGlass.scale.set(0.64, 0.98, 1.55);
     this.cockpitGlass.position.set(0, 0.33, -0.92);
     this.cockpitGlass.renderOrder = 4;
     this.cockpitGlass.visible = false;

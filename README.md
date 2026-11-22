@@ -211,15 +211,16 @@ On the menu, **Enter** starts the selected flight.
 
 ![Cockpit view](docs/cockpit.jpg)
 
-`C` cycles chase → cockpit → orbit. From the pilot's seat the canopy is a thin
-reflective inner shell with a front bow and glinting edges, so you are aware of
-the glass without it fogging the view. The side rails, centre stick and centre
+`C` cycles chase → cockpit → orbit. The canopy is a tall bubble whose sill
+stays flush on the fuselage; from the pilot's seat it is a thin reflective inner
+shell with a front bow and glinting edges, so you are aware of the glass without
+it fogging the view. The side rails, centre stick and centre
 console stay in sight, with the nose below the panel giving the horizon
 reference; mouse-drag looks around, and `Z` / `X` toggle a shoulder check to the
-left or right. The panel sits low under the coaming and the nose line falls
-away ahead of the canopy, so the aiming point stays in view as the nose comes
-up; below 20 m a compact flare strip shows height and sink in the bottom
-corner.
+left or right. The panel sits low under the coaming, the canopy rises above the
+eye, and the nose line falls away ahead of it, so the aiming point stays in view
+as the nose comes up; below 20 m a compact flare strip shows height and sink in
+the bottom corner.
 The dash is a moulded arch that sweeps down into deep knee cut-outs either side
 of the centre tunnel, and the flocked deck carries two dark footwells with baked
 contact shadows, so the cockpit reads as a shaded tub rather than a flat plate.

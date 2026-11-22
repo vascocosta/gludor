@@ -466,6 +466,7 @@ export class WorldRenderer {
     if (this.freeCamera) {
       this.camera.quaternion.copy(lookQuaternion(this.freeYaw, this.freePitch));
       this.setFov(65);
+      this.setNear(0.08);
       this.glider.setCockpitView(false);
       return;
     }
@@ -482,6 +483,7 @@ export class WorldRenderer {
       );
       this.camera.lookAt(target);
       this.setFov(52);
+      this.setNear(0.08);
       this.glider.setCockpitView(false);
       return;
     }
@@ -514,6 +516,9 @@ export class WorldRenderer {
         this.camera.quaternion.multiply(new Quaternion().setFromEuler(this.shakeEuler));
       }
       this.setFov(72);
+      // The raised canopy sits close overhead: a nearer cockpit clip plane
+      // keeps the glass from being cut away when the pilot looks straight up.
+      this.setNear(0.03);
       return;
     }
 
@@ -534,6 +539,7 @@ export class WorldRenderer {
       if (this.camera.position.y < ground) this.camera.position.y = ground;
       this.camera.lookAt(target);
       this.setFov(60);
+      this.setNear(0.08);
       return;
     }
 
@@ -556,11 +562,19 @@ export class WorldRenderer {
     this.camera.up.set(0, 1, 0);
     this.camera.lookAt(this.chaseTarget);
     this.setFov(62);
+    this.setNear(0.08);
   }
 
   private setFov(fov: number): void {
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  private setNear(near: number): void {
+    if (Math.abs(this.camera.near - near) > 1e-6) {
+      this.camera.near = near;
       this.camera.updateProjectionMatrix();
     }
   }
