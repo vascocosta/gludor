@@ -54,6 +54,20 @@ describe("towns", () => {
     expect(buildingHeightAt(0, 0)).toBeNull();
   });
 
+  it("spreads its buildings across a square grid", () => {
+    const towns = collect(-20_000, -30_000, 20_000, 30_000);
+    expect(towns.length).toBeGreaterThan(0);
+
+    for (const town of towns) {
+      expect(town.streets.length).toBe(18);
+      const xs = town.buildings.map((building) => building.x);
+      const zs = town.buildings.map((building) => building.z);
+      const width = Math.max(...xs) - Math.min(...xs);
+      const depth = Math.max(...zs) - Math.min(...zs);
+      expect(Math.min(width, depth)).toBeGreaterThan(Math.max(width, depth) * 0.6);
+    }
+  });
+
   it("anchors the home landscape with a fixed town", () => {
     const home = TOWNS.home;
     const towns = collect(home.x - 1000, home.z - 1000, home.x + 1000, home.z + 1000);
@@ -103,6 +117,19 @@ describe("towns", () => {
     }
   });
 
+  it("adds taller tenements to the larger towns", () => {
+    const towns = collect(-40_000, -30_000, 40_000, 30_000);
+    const buildings = towns.flatMap((town) => town.buildings);
+    const tenements = buildings.filter((building) => building.kind === "tenement");
+    const cottages = buildings.filter((building) => building.kind === "cottage");
+
+    expect(tenements.length).toBeGreaterThan(10);
+    expect(tenements.every((building) => building.wallHeight > 10)).toBe(true);
+    expect(Math.max(...tenements.map((building) => building.wallHeight))).toBeGreaterThan(
+      Math.max(...cottages.map((building) => building.wallHeight)),
+    );
+  });
+
   it("reports a solid roof only where a building stands", () => {
     const towns = collect(-40_000, -30_000, 40_000, 30_000);
     let checked = 0;
@@ -128,7 +155,7 @@ describe("towns", () => {
 
     const averageBuildings =
       towns.reduce((sum, town) => sum + town.buildings.length, 0) / towns.length;
-    expect(averageBuildings).toBeGreaterThan(30);
+    expect(averageBuildings).toBeGreaterThan(250);
   });
 
   it("ends the flight when the glider hits a roof", () => {

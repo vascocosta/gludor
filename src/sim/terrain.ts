@@ -1,9 +1,9 @@
-import { LAKES, MOUNTAINS, RIDGES, WORLD, type RidgeSpec, type WorldConfig } from "../config";
+import { LAKES, MOUNTAINS, RIDGES, RIVERS, WORLD, type RidgeSpec, type WorldConfig } from "../config";
 import { lerp, smoothstep } from "../core/math";
 import { fbm2D, hash2, mulberry32, ridged2D, valueNoise2D } from "../core/rng";
 
 /**
- * The analytic ground surface, before lakes are carved. It has no extent, so
+ * The analytic ground surface, before lakes and rivers are carved. It has no extent, so
  * streamed terrain tiles can be generated anywhere and the result is always the
  * same for a given seed.
  */
@@ -367,7 +367,7 @@ export function mountainHeightAt(x: number, z: number, config: WorldConfig): num
 // ---------------------------------------------------------------------------
 // Lakes
 //
-// Lakes come from a deterministic 5 km hash grid. Each cell either owns one
+// Lakes come from a deterministic 2.5 km hash grid. Each cell either owns one
 // lake or none, so the same lake always appears at the same place no matter
 // how the world is streamed. The carve is applied inside terrainHeightAt, which
 // keeps physics, terrain tiles, trees, and the water mesh in agreement.
@@ -643,9 +643,12 @@ function applyLakes(x: number, z: number, height: number, config: WorldConfig): 
   return h;
 }
 
-/** The analytic ground with lake basins carved into it. */
+/** The analytic ground with lake basins and stream beds carved into it. */
 export function terrainHeightAt(x: number, z: number, config: WorldConfig): number {
-  return applyLakes(x, z, baseHeightAt(x, z, config), config);
+  // Carve the lakes first, then the streams. A lake's shore blend reaches well
+  // beyond its water polygon and would otherwise fill a nearby river channel
+  // back in, burying the ribbon for hundreds of metres.
+  return applyRivers(x, z, applyLakes(x, z, baseHeightAt(x, z, config), config), config);
 }
 
 /**
@@ -679,10 +682,15 @@ export function forEachLakeInBounds(
 }
 
 /**
- * Water level at a point, or null when the point is not over a lake. Shared by
- * the terrain sampler and by anything that needs to keep clear of water.
+ * Nearest lake hit from the lake grid alone. Rivers call this when they build
+ * their profiles, before the combined water query is available.
  */
-export function waterLevelAt(x: number, z: number, config: WorldConfig = WORLD): number | null {
+function lakeHitAt(
+  x: number,
+  z: number,
+  config: WorldConfig,
+  maxDistance: number,
+): { level: number; distance: number } | null {
   const cellI = Math.floor(x / LAKE_CELL);
   const cellJ = Math.floor(z / LAKE_CELL);
   let best: Lake | null = null;
@@ -704,14 +712,395 @@ export function waterLevelAt(x: number, z: number, config: WorldConfig = WORLD):
       if (!lake) continue;
 
       const d = lakeDistance(bounds, dx, dz);
-      if (d > 1.08 || d >= bestDistance) continue;
+      if (d > maxDistance || d >= bestDistance) continue;
       bestDistance = d;
       best = lake;
     }
   }
 
-  return best ? best.level : null;
+  return best ? { level: best.level, distance: bestDistance } : null;
 }
+
+/**
+ * Water level at a point from the lake grid alone. Rivers call this when they
+ * build their profiles, before the combined water query is available.
+ */
+function lakeWaterLevelAt(
+  x: number,
+  z: number,
+  config: WorldConfig,
+  maxDistance = 1.08,
+): number | null {
+  return lakeHitAt(x, z, config, maxDistance)?.level ?? null;
+}
+
+/**
+ * Lake level using the extent of the rendered water polygon. River bank meshes
+ * use this to tuck their apron under the lake surface at a stream mouth.
+ */
+export function lakeSurfaceLevelAt(
+  x: number,
+  z: number,
+  config: WorldConfig = WORLD,
+): number | null {
+  return lakeHitAt(x, z, config, 1.02)?.level ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Rivers
+//
+// A small hand-authored network near the field. Each stream is a Catmull-Rom
+// centreline sampled into short segments. The same station list drives terrain
+// carving, water queries, and the rendered ribbon, so the three cannot drift
+// apart. A coarse spatial hash keeps river sampling cheap during terrain builds.
+// ---------------------------------------------------------------------------
+
+const RIVER_BANK = RIVERS.bankWidth;
+const RIVER_DEPTH = RIVERS.depth;
+const RIVER_GRID = 128;
+/**
+ * Estuary basin around a lake mouth. The lake's shore lip normally stands a
+ * couple of metres above the water plane; inside this radius the lip is pulled
+ * below the lake surface so the river enters through open water rather than a
+ * narrow notch between two grass spits.
+ */
+const MOUTH_BASIN_RADIUS = 300;
+const MOUTH_BASIN_DEPTH = 3;
+
+export interface RiverStation {
+  x: number;
+  z: number;
+  /** Full width of the water ribbon. */
+  width: number;
+  /** Water surface height at the station. */
+  level: number;
+  /** True inside an existing lake, where the lake water owns the surface. */
+  inLake: boolean;
+}
+
+export interface River {
+  stations: RiverStation[];
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+  /** First station over a rendered lake polygon, if the stream ends in one. */
+  mouth: { x: number; z: number; level: number } | null;
+}
+
+interface RiverHit {
+  distance: number;
+  halfWidth: number;
+  level: number;
+  flowX: number;
+  flowZ: number;
+}
+
+interface RiverSegment {
+  ax: number;
+  az: number;
+  bx: number;
+  bz: number;
+  halfA: number;
+  halfB: number;
+  levelA: number;
+  levelB: number;
+  flowX: number;
+  flowZ: number;
+  influence: number;
+}
+
+const riverCache = {
+  seed: Number.NaN,
+  rivers: [] as River[],
+  segments: [] as RiverSegment[],
+  grid: new Map<number, number[]>(),
+};
+
+function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number): number {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (
+    0.5 *
+    (2 * p1 +
+      (-p0 + p2) * t +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
+  );
+}
+
+function sampleRiver(
+  spec: { points: ReadonlyArray<readonly [number, number, number]> },
+  config: WorldConfig,
+): River {
+  const points = spec.points;
+  const stations: RiverStation[] = [];
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+    const steps = Math.max(
+      1,
+      Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / RIVERS.stationSpacing),
+    );
+
+    for (let k = 0; k < steps; k++) {
+      const t = k / steps;
+      stations.push({
+        x: catmullRom(p0[0], p1[0], p2[0], p3[0], t),
+        z: catmullRom(p0[1], p1[1], p2[1], p3[1], t),
+        width: lerp(p1[2], p2[2], t),
+        level: 0,
+        inLake: false,
+      });
+    }
+  }
+
+  const last = points[points.length - 1];
+  stations.push({ x: last[0], z: last[1], width: last[2], level: 0, inLake: false });
+  if (stations.length < 2) {
+    return {
+      stations,
+      minX: last[0],
+      minZ: last[1],
+      maxX: last[0],
+      maxZ: last[1],
+      mouth: null,
+    };
+  }
+
+  const rawHeights = stations.map((station) => baseHeightAt(station.x, station.z, config));
+  const distances: number[] = [0];
+  let total = 0;
+  for (let i = 1; i < stations.length; i++) {
+    total += Math.hypot(stations[i].x - stations[i - 1].x, stations[i].z - stations[i - 1].z);
+    distances.push(total);
+  }
+
+  const startLake = lakeWaterLevelAt(stations[0].x, stations[0].z, config);
+  const endLake = lakeWaterLevelAt(last[0], last[1], config);
+
+  for (let i = 0; i < stations.length; i++) {
+    const progress = total > 0 ? distances[i] / total : 1;
+    // Follow the local ground closely. The western river crosses a broad
+    // saddle on its way down from the mountain, so a strictly monotonic
+    // profile would cut a deep, invisible gorge; a shallow river bed that
+    // follows the land reads far better from the air.
+    let target = rawHeights[i] - 0.9;
+    if (startLake !== null && progress < 0.15) {
+      target = lerp(startLake, target, smoothstep(0, 0.15, progress));
+    }
+    if (endLake !== null && progress > 0.75) {
+      target = lerp(target, endLake, smoothstep(0.75, 0.95, progress));
+    }
+    const level = Math.min(target, rawHeights[i] - 0.6);
+    // Use the rendered lake polygon's extent, not the slightly wider water
+    // query radius, so the river ribbon does not stop short of the lake.
+    const lakeAtStation = lakeWaterLevelAt(stations[i].x, stations[i].z, config, 1.02);
+    stations[i].level = lakeAtStation !== null ? Math.min(level, lakeAtStation) : level;
+    stations[i].inLake = lakeAtStation !== null;
+  }
+
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  let mouth: River["mouth"] = null;
+  for (const station of stations) {
+    if (!mouth && station.inLake) {
+      mouth = { x: station.x, z: station.z, level: station.level };
+    }
+    minX = Math.min(minX, station.x);
+    minZ = Math.min(minZ, station.z);
+    maxX = Math.max(maxX, station.x);
+    maxZ = Math.max(maxZ, station.z);
+  }
+
+  return { stations, minX, minZ, maxX, maxZ, mouth };
+}
+
+function riverGridKey(cx: number, cz: number): number {
+  return cx * 1_000_003 + cz;
+}
+
+function ensureRiverCaches(config: WorldConfig): void {
+  if (riverCache.seed === config.seed) return;
+  riverCache.seed = config.seed;
+  riverCache.rivers = RIVERS.streams.map((spec) => sampleRiver(spec, config));
+  riverCache.segments = [];
+  riverCache.grid.clear();
+
+  for (const river of riverCache.rivers) {
+    for (let i = 0; i < river.stations.length - 1; i++) {
+      const a = river.stations[i];
+      const b = river.stations[i + 1];
+      const length = Math.hypot(b.x - a.x, b.z - a.z);
+      if (length < 1e-6) continue;
+      const segment: RiverSegment = {
+        ax: a.x,
+        az: a.z,
+        bx: b.x,
+        bz: b.z,
+        halfA: a.width / 2,
+        halfB: b.width / 2,
+        levelA: a.level,
+        levelB: b.level,
+        flowX: (b.x - a.x) / length,
+        flowZ: (b.z - a.z) / length,
+        influence: Math.max(a.width, b.width) / 2 + RIVER_BANK + 4,
+      };
+      const index = riverCache.segments.push(segment) - 1;
+      const minCX = Math.floor((Math.min(a.x, b.x) - segment.influence) / RIVER_GRID);
+      const maxCX = Math.floor((Math.max(a.x, b.x) + segment.influence) / RIVER_GRID);
+      const minCZ = Math.floor((Math.min(a.z, b.z) - segment.influence) / RIVER_GRID);
+      const maxCZ = Math.floor((Math.max(a.z, b.z) + segment.influence) / RIVER_GRID);
+      for (let cz = minCZ; cz <= maxCZ; cz++) {
+        for (let cx = minCX; cx <= maxCX; cx++) {
+          const key = riverGridKey(cx, cz);
+          const list = riverCache.grid.get(key);
+          if (list) list.push(index);
+          else riverCache.grid.set(key, [index]);
+        }
+      }
+    }
+  }
+}
+
+function riverSampleAt(x: number, z: number, config: WorldConfig): RiverHit | null {
+  ensureRiverCaches(config);
+  const list = riverCache.grid.get(
+    riverGridKey(Math.floor(x / RIVER_GRID), Math.floor(z / RIVER_GRID)),
+  );
+  if (!list) return null;
+
+  let best: RiverHit | null = null;
+  for (const index of list) {
+    const segment = riverCache.segments[index];
+    const dx = segment.bx - segment.ax;
+    const dz = segment.bz - segment.az;
+    const lengthSq = dx * dx + dz * dz;
+    const t =
+      lengthSq > 0
+        ? Math.max(0, Math.min(1, ((x - segment.ax) * dx + (z - segment.az) * dz) / lengthSq))
+        : 0;
+    const distance = Math.hypot(x - (segment.ax + dx * t), z - (segment.az + dz * t));
+    const halfWidth = lerp(segment.halfA, segment.halfB, t);
+    if (distance > halfWidth + RIVER_BANK) continue;
+
+    if (!best || distance < best.distance) {
+      best = {
+        distance,
+        halfWidth,
+        level: lerp(segment.levelA, segment.levelB, t),
+        flowX: segment.flowX,
+        flowZ: segment.flowZ,
+      };
+    }
+  }
+
+  return best;
+}
+
+function applyRivers(x: number, z: number, height: number, config: WorldConfig): number {
+  const hit = riverSampleAt(x, z, config);
+  let carved = height;
+  if (hit && hit.distance < hit.halfWidth + RIVER_BANK) {
+    if (hit.distance <= hit.halfWidth) {
+      const t = hit.halfWidth > 0 ? hit.distance / hit.halfWidth : 0;
+      const bed = hit.level - RIVER_DEPTH * (1 - 0.58 * t * t);
+      carved = Math.min(height, bed);
+    } else {
+      const t = smoothstep(hit.halfWidth, hit.halfWidth + RIVER_BANK, hit.distance);
+      const bank = lerp(hit.level + 0.16, height, t);
+      carved = Math.min(height, bank);
+    }
+  }
+
+  // Estuary basin: inside the rendered lake polygon, pull the shore lip down
+  // around the mouth. The lake surface then covers the whole junction.
+  ensureRiverCaches(config);
+  for (const river of riverCache.rivers) {
+    const mouth = river.mouth;
+    if (!mouth) continue;
+    const dx = x - mouth.x;
+    const dz = z - mouth.z;
+    if (dx * dx + dz * dz > MOUTH_BASIN_RADIUS * MOUTH_BASIN_RADIUS) continue;
+    const lake = lakeHitAt(x, z, config, 1.02);
+    if (lake !== null) {
+      // Taper to zero at the polygon edge so the water plane still sits inside
+      // its own shore; the centre of the mouth gets the full basin depth.
+      const shore = smoothstep(1.02, 0.94, lake.distance);
+      if (shore > 0) {
+        carved = Math.min(carved, lake.level - MOUTH_BASIN_DEPTH * shore);
+      }
+    }
+  }
+
+  return carved;
+}
+
+/**
+ * Water level at a point, or null when it is not over a lake or stream. Shared
+ * by the terrain sampler and by anything that needs to keep clear of water.
+ */
+export function waterLevelAt(x: number, z: number, config: WorldConfig = WORLD): number | null {
+  const lake = lakeWaterLevelAt(x, z, config);
+  if (lake !== null) return lake;
+  const river = riverSampleAt(x, z, config);
+  return river && river.distance <= river.halfWidth ? river.level : null;
+}
+
+/** Visit every hand-placed stream whose bounds overlap the rectangle. */
+export function forEachRiverInBounds(
+  minX: number,
+  minZ: number,
+  maxX: number,
+  maxZ: number,
+  visit: (river: River) => void,
+  config: WorldConfig = WORLD,
+): void {
+  ensureRiverCaches(config);
+  for (const river of riverCache.rivers) {
+    if (river.maxX < minX || river.minX > maxX) continue;
+    if (river.maxZ < minZ || river.minZ > maxZ) continue;
+    visit(river);
+  }
+}
+
+/** True when a circle reaches a river water or bank corridor. */
+export function riverIntersectsCircle(
+  cx: number,
+  cz: number,
+  radius: number,
+  config: WorldConfig = WORLD,
+): boolean {
+  ensureRiverCaches(config);
+  for (const segment of riverCache.segments) {
+    const dx = segment.bx - segment.ax;
+    const dz = segment.bz - segment.az;
+    const lengthSq = dx * dx + dz * dz;
+    const t =
+      lengthSq > 0
+        ? Math.max(0, Math.min(1, ((cx - segment.ax) * dx + (cz - segment.az) * dz) / lengthSq))
+        : 0;
+    const distance = Math.hypot(cx - (segment.ax + dx * t), cz - (segment.az + dz * t));
+    if (distance <= radius + segment.influence) return true;
+  }
+  return false;
+}
+
+/**
+ * Distance beyond the river bank, or Infinity away from every stream. The
+ * terrain streamer uses this to cut a matching hole for the high-resolution
+ * river channel mesh.
+ */
+export function riverBankClearanceAt(x: number, z: number, config: WorldConfig = WORLD): number {
+  const hit = riverSampleAt(x, z, config);
+  return hit ? hit.distance - (hit.halfWidth + RIVER_BANK) : Infinity;
+}
+
 
 /**
  * A stateless ground sampler. The same analytic surface is sampled on a
@@ -732,6 +1121,13 @@ export class Terrain {
   }
 
   heightAt(x: number, z: number): number {
+    // The 50 m collision grid cannot resolve a 20-40 m stream. Near a river
+    // use the analytic carved bed, so the water surface is never below an
+    // invisible collision wall and a landing actually ditches.
+    if (riverBankClearanceAt(x, z, this.config) < 4) {
+      return terrainHeightAt(x, z, this.config);
+    }
+
     const spacing = this.gridSpacing;
     const gx = x / spacing;
     const gz = z / spacing;
@@ -746,6 +1142,32 @@ export class Terrain {
     const h11 = this.nodeHeight(i + 1, j + 1);
 
     return lerp(lerp(h00, h10, tx), lerp(h01, h11, tx), tz);
+  }
+
+  /**
+   * Height of the rendered terrain surface, using the same diagonal split as
+   * `TerrainStreamer`. Roads and other ground-hugging meshes must sample this
+   * rather than the bilinear `heightAt`, or the triangle surface can rise
+   * above them on convex ground and bury parts of the ribbon.
+   */
+  renderHeightAt(x: number, z: number): number {
+    const spacing = this.gridSpacing;
+    const gx = x / spacing;
+    const gz = z / spacing;
+    const i = Math.floor(gx);
+    const j = Math.floor(gz);
+    const tx = gx - i;
+    const tz = gz - j;
+
+    const h00 = this.nodeHeight(i, j);
+    const h10 = this.nodeHeight(i + 1, j);
+    const h01 = this.nodeHeight(i, j + 1);
+    const h11 = this.nodeHeight(i + 1, j + 1);
+
+    // The mesh splits each cell from (0,0) to (1,1).
+    return tz >= tx
+      ? h00 + (h01 - h00) * tz + (h11 - h01) * tx
+      : h00 + (h10 - h00) * tx + (h11 - h10) * tz;
   }
 
   /** Water level at a point, or null when the point is not over a lake. */

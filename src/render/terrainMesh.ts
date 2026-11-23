@@ -12,10 +12,10 @@ import {
   RepeatWrapping,
   Vector3,
 } from "three";
-import { STREAMING, WORLD } from "../config";
+import { RIVERS, STREAMING, WORLD } from "../config";
 import { smoothstep } from "../core/math";
 import { fbm2D, hash2, periodicFbm2D, valueNoise2D } from "../core/rng";
-import { terrainHeightAt } from "../sim/terrain";
+import { terrainHeightAt, forEachRiverInBounds } from "../sim/terrain";
 import type { CloudShadows } from "./cloudShadows";
 
 // Three overlapping LOD tiers. Each tier is a stable global tile grid, so
@@ -32,6 +32,9 @@ const TIERS = [
 // from the camera, the mid tier at least 16 km, and the far tier at least
 // 32 km, wherever the camera sits inside its current tile.
 const TILES_EACH_SIDE = 2;
+
+/** Cut terrain cells that touch the stream bank corridor. */
+const RIVER_HOLE_MARGIN = 8;
 
 // Field and pasture colours stay muted; the sky and cloud shadows supply most
 // of the scene's contrast.
@@ -102,7 +105,13 @@ function createDetailTexture(seed: number): DataTexture {
 }
 
 /** Colour one terrain vertex from its position, height, and slope. */
-function colorAt(x: number, z: number, height: number, slope: number, seed: number): Color {
+export function terrainColorAt(
+  x: number,
+  z: number,
+  height: number,
+  slope: number,
+  seed: number,
+): Color {
   colorScratch.copy(grassLow);
   colorScratch.lerp(grass, smoothstep(360, 540, height));
   colorScratch.lerp(dryGrass, smoothstep(600, 780, height));
@@ -153,7 +162,7 @@ function colorAt(x: number, z: number, height: number, slope: number, seed: numb
  */
 export class TerrainStreamer {
   private readonly scene: Object3D;
-  private readonly material: MeshStandardMaterial;
+  readonly material: MeshStandardMaterial;
   private readonly tiles = new Map<string, Mesh>();
   private readonly pending: TileSpec[] = [];
   private readonly pendingKeys = new Set<string>();
@@ -285,6 +294,52 @@ export class TerrainStreamer {
     const colors = new Float32Array(vertexCount * 3);
     const indices = new Uint16Array(quadCount * 6);
 
+    // The coarse cells cannot resolve a river channel. Cut a hole through
+    // every LOD tier and let RiverChannelField fill it with terrain-resolution
+    // geometry that actually contains the carved channel. Without the mid/far
+    // cuts, those lower tiers would still cover the stream through the near hole.
+    //
+    // The cut is computed from the station centreline rather than the carve
+    // query, which reports nothing beyond the bank. A wider tier can otherwise
+    // slip a 100-400 m grid between two bank vertices and keep a solid sheet of
+    // terrain over the water.
+    const riverHoles: Uint8Array | null = (() => {
+      const holeMargin = RIVER_HOLE_MARGIN + spacing * 0.7071;
+      const stations: { x: number; z: number; reach: number }[] = [];
+      forEachRiverInBounds(x0, z0, x0 + size, z0 + size, (river) => {
+        for (const station of river.stations) {
+          const reach = station.width / 2 + RIVERS.bankWidth + holeMargin;
+          if (
+            station.x + reach < x0 ||
+            station.x - reach > x0 + size ||
+            station.z + reach < z0 ||
+            station.z - reach > z0 + size
+          ) {
+            continue;
+          }
+          stations.push({ x: station.x, z: station.z, reach: reach * reach });
+        }
+      });
+      if (stations.length === 0) return null;
+
+      const holes = new Uint8Array((cells + 1) * (cells + 1));
+      for (let j = 0; j <= cells; j++) {
+        const z = z0 + j * spacing;
+        for (let i = 0; i <= cells; i++) {
+          const x = x0 + i * spacing;
+          for (const station of stations) {
+            const dx = x - station.x;
+            const dz = z - station.z;
+            if (dx * dx + dz * dz < station.reach) {
+              holes[j * (cells + 1) + i] = 1;
+              break;
+            }
+          }
+        }
+      }
+      return holes;
+    })();
+
     let offset = 0;
     for (let j = 0; j <= cells; j++) {
       for (let i = 0; i <= cells; i++) {
@@ -302,7 +357,7 @@ export class TerrainStreamer {
         normalScratch.normalize();
 
         const slope = 1 - normalScratch.y;
-        const color = colorAt(x, z, height, slope, WORLD.seed);
+        const color = terrainColorAt(x, z, height, slope, WORLD.seed);
 
         positions[offset] = x;
         positions[offset + 1] = height - drop;
@@ -329,6 +384,13 @@ export class TerrainStreamer {
         const i2 = i0 + width;
         const i3 = i2 + 1;
 
+        if (
+          riverHoles &&
+          (riverHoles[i0] || riverHoles[i1] || riverHoles[i2] || riverHoles[i3])
+        ) {
+          continue;
+        }
+
         indices[indexOffset] = i0;
         indices[indexOffset + 1] = i2;
         indices[indexOffset + 2] = i3;
@@ -343,7 +405,7 @@ export class TerrainStreamer {
     geometry.setAttribute("position", new BufferAttribute(positions, 3));
     geometry.setAttribute("normal", new BufferAttribute(normals, 3));
     geometry.setAttribute("color", new BufferAttribute(colors, 3));
-    geometry.setIndex(new BufferAttribute(indices, 1));
+    geometry.setIndex(new BufferAttribute(indices.subarray(0, indexOffset), 1));
     geometry.computeBoundingSphere();
     return geometry;
   }

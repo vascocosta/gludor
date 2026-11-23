@@ -18,7 +18,9 @@ import { hash2, mulberry32 } from "../core/rng";
 import type { LiftField, Thermal } from "../sim/lift";
 
 const vertexShader = /* glsl */ `
+  #include <common>
   #include <fog_pars_vertex>
+  #include <logdepthbuf_pars_vertex>
 
   attribute float aHeight;
   varying vec3 vWorldNormal;
@@ -34,12 +36,14 @@ const vertexShader = /* glsl */ `
     vec4 mvPosition = viewMatrix * worldPosition;
     gl_Position = projectionMatrix * mvPosition;
 
+    #include <logdepthbuf_vertex>
     #include <fog_vertex>
   }
 `;
 
 const fragmentShader = /* glsl */ `
   #include <fog_pars_fragment>
+  #include <logdepthbuf_pars_fragment>
 
   uniform vec3 uSunDirection;
   uniform vec3 uSunColor;
@@ -52,6 +56,8 @@ const fragmentShader = /* glsl */ `
   varying float vHeight;
 
   void main() {
+    #include <logdepthbuf_fragment>
+
     vec3 N = normalize(vWorldNormal);
     vec3 V = normalize(cameraPosition - vWorldPosition);
     vec3 L = normalize(uSunDirection);

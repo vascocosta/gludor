@@ -9,25 +9,34 @@ import {
   type WebGLProgramParametersWithUniforms,
 } from "three";
 import { LAKES } from "../config";
-import { forEachLakeInBounds, type Lake } from "../sim/terrain";
+import {
+  forEachLakeInBounds,
+  forEachRiverInBounds,
+  type Lake,
+  type River,
+  type RiverStation,
+} from "../sim/terrain";
 import type { CloudShadows } from "./cloudShadows";
 
 const SEGMENTS = 72;
+/** Stations a river ribbon carries past the lake shore to close the mouth. */
+const MOUTH_STATIONS = 8;
 /** Slightly beyond the nominal shoreline so the edge tucks under the bank. */
 const SHORE_SCALE = 1.02;
 /** Opaque stylized water: dark in the middle, lighter over the shelving shore. */
-const DEEP = new Color(0x0d4254);
-const SHALLOW = new Color(0x2f7f8b);
+const DEEP = new Color(0x0a2c4d);
+const SHALLOW = new Color(0x1b557f);
 
 /**
- * Flat water surfaces for every lake in rendering range. The lake grid is
- * infinite, so this is a moving window just like the terrain. All lakes share
- * one merged geometry and one material, keeping the draw cost to a single call
- * no matter how many lakes are visible.
+ * Flat water surfaces for every lake and stream in rendering range. The lake
+ * grid is infinite, so this is a moving window just like the terrain. Lakes and
+ * rivers share one merged geometry and one material, keeping the draw cost to
+ * a single call no matter how much water is visible.
  *
- * The water is deliberately opaque and stylized: a teal body, a fresnel sky
- * tint, and animated wave normals that catch the sun. Terrain geometry hides
- * the edges of each disk outside the carved basin.
+ * The water is deliberately opaque and stylized: a deep-blue body, a fresnel
+ * sky tint, and animated wave normals that catch the sun. Terrain geometry hides
+ * the edges of each lake disk, and the high-resolution river bank mesh keeps
+ * stream ribbons from being buried by the coarse terrain.
  */
 export class WaterField {
   readonly mesh: Mesh;
@@ -38,7 +47,7 @@ export class WaterField {
   private readonly skyUniform: { value: Color };
   private lastX = Number.POSITIVE_INFINITY;
   private lastZ = Number.POSITIVE_INFINITY;
-  private lakeCount = 0;
+  private surfaceCount = 0;
 
   constructor(scene: Object3D, cloudShadows: CloudShadows, skyColor: Color) {
     this.skyUniform = { value: skyColor };
@@ -60,14 +69,17 @@ export class WaterField {
           "#include <common>",
           `#include <common>
           attribute float aShore;
+          attribute vec2 aFlow;
           varying vec3 vWaterWorld;
-          varying float vWaterShore;`,
+          varying float vWaterShore;
+          varying vec2 vWaterFlow;`,
         )
         .replace(
           "#include <begin_vertex>",
           `#include <begin_vertex>
           vWaterWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
-          vWaterShore = aShore;`,
+          vWaterShore = aShore;
+          vWaterFlow = aFlow;`,
         );
 
       shader.fragmentShader = shader.fragmentShader
@@ -80,6 +92,7 @@ export class WaterField {
           uniform vec3 uWaterSky;
           varying vec3 vWaterWorld;
           varying float vWaterShore;
+          varying vec2 vWaterFlow;
 
           float waterHash(vec2 p) {
             p = fract(p * vec2(123.34, 456.21));
@@ -119,6 +132,14 @@ export class WaterField {
             slope += d3 * 0.012 * cos(dot(p, d3) * 0.670 + t * 2.20 + warp * 0.6);
             slope += d4 * 0.008 * cos(dot(p, d4) * 1.450 - t * 2.90 + warp * 2.3);
             slope *= gust;
+
+            // Rivers carry a flow direction. A travelling wave along it makes
+            // the stream read as moving water rather than a static blue strip.
+            if (length(vWaterFlow) > 0.001) {
+              vec2 flow = normalize(vWaterFlow);
+              float flowPhase = dot(p, flow) * 0.16 - t * 2.8;
+              slope += flow * cos(flowPhase) * 0.026;
+            }
 
             // Noise-derived slopes break up the directional trains into
             // irregular, wind-stretched ripples.
@@ -174,6 +195,7 @@ export class WaterField {
     const positions: number[] = [];
     const normals: number[] = [];
     const shores: number[] = [];
+    const flows: number[] = [];
     const indices: number[] = [];
     const radius = LAKES.renderRadius;
 
@@ -182,15 +204,23 @@ export class WaterField {
       cz - radius,
       cx + radius,
       cz + radius,
-      (lake) => this.addLake(lake, positions, normals, shores, indices),
+      (lake) => this.addLake(lake, positions, normals, shores, flows, indices),
+    );
+    forEachRiverInBounds(
+      cx - radius,
+      cz - radius,
+      cx + radius,
+      cz + radius,
+      (river) => this.addRiver(river, positions, normals, shores, flows, indices),
     );
 
-    this.lakeCount = indices.length / (SEGMENTS * 3);
+    this.surfaceCount = indices.length;
 
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
     geometry.setAttribute("normal", new BufferAttribute(new Float32Array(normals), 3));
     geometry.setAttribute("aShore", new BufferAttribute(new Float32Array(shores), 1));
+    geometry.setAttribute("aFlow", new BufferAttribute(new Float32Array(flows), 2));
     geometry.setIndex(
       new BufferAttribute(new Uint32Array(indices), 1),
     );
@@ -198,7 +228,7 @@ export class WaterField {
 
     this.mesh.geometry.dispose();
     this.mesh.geometry = geometry;
-    this.mesh.visible = this.lakeCount > 0;
+    this.mesh.visible = this.surfaceCount > 0;
   }
 
   private addLake(
@@ -206,6 +236,7 @@ export class WaterField {
     positions: number[],
     normals: number[],
     shores: number[],
+    flows: number[],
     indices: number[],
   ): void {
     const base = positions.length / 3;
@@ -216,6 +247,7 @@ export class WaterField {
     positions.push(lake.x, lake.level, lake.z);
     normals.push(0, 1, 0);
     shores.push(0);
+    flows.push(0, 0);
 
     for (let k = 0; k < SEGMENTS; k++) {
       const theta = (k / SEGMENTS) * Math.PI * 2;
@@ -235,11 +267,89 @@ export class WaterField {
       positions.push(x, lake.level, z);
       normals.push(0, 1, 0);
       shores.push(1);
+      flows.push(0, 0);
 
       const current = base + 1 + k;
       const next = base + 1 + ((k + 1) % SEGMENTS);
       // Counter-clockwise seen from above, so the plane faces the sky.
       indices.push(base, next, current);
+    }
+  }
+
+  /** Overlap the lake surface by a short distance so the mouth has no gap. */
+  private addRiver(
+    river: River,
+    positions: number[],
+    normals: number[],
+    shores: number[],
+    flows: number[],
+    indices: number[],
+  ): void {
+    const mouth = river.stations.findIndex((station) => station.inLake);
+    // Carry the ribbon a little way into the lake. The rendered lake polygon is
+    // slightly narrower than the carved basin, so a one-station overlap can
+    // leave a strip of shore between the stream and the open water.
+    const end =
+      mouth > 0 ? Math.min(river.stations.length, mouth + MOUTH_STATIONS) : river.stations.length;
+    const stations = river.stations.slice(0, end);
+    if (stations.length >= 2) {
+      this.addRiverStrip(stations, positions, normals, shores, flows, indices);
+    }
+  }
+
+  private addRiverStrip(
+    stations: RiverStation[],
+    positions: number[],
+    normals: number[],
+    shores: number[],
+    flows: number[],
+    indices: number[],
+  ): void {
+    const base = positions.length / 3;
+    // Widen the ribbon briefly past the shore so the mouth meets the lake as a
+    // small estuary instead of squeezing through a notch in the bank.
+    const firstWet = stations.findIndex((station) => station.inLake);
+
+    for (let i = 0; i < stations.length; i++) {
+      const station = stations[i];
+      const prev = stations[Math.max(0, i - 1)];
+      const next = stations[Math.min(stations.length - 1, i + 1)];
+      const dx = next.x - prev.x;
+      const dz = next.z - prev.z;
+      const length = Math.hypot(dx, dz) || 1;
+      const flowX = dx / length;
+      const flowZ = dz / length;
+      let half = station.width / 2;
+      if (firstWet >= 0 && i >= firstWet) {
+        const k = i - firstWet;
+        const fan =
+          k <= 4 ? 1 + 0.9 * (k / 4) : 1 + 0.9 * Math.max(0, 1 - (k - 4) / 4);
+        half *= fan;
+      }
+      const leftX = station.x - flowZ * half;
+      const leftZ = station.z + flowX * half;
+      const rightX = station.x + flowZ * half;
+      const rightZ = station.z - flowX * half;
+      // The final station overlaps the lake slightly; keeping it just above the
+      // lake plane prevents z-fighting while closing the shoreline gap.
+      const y = station.level + (station.inLake ? 0.02 : 0);
+
+      // Left edge, centre, right edge: the centre keeps the deep colour while
+      // the edges get the shallow shore tint.
+      positions.push(leftX, y, leftZ);
+      positions.push(station.x, y, station.z);
+      positions.push(rightX, y, rightZ);
+      for (let k = 0; k < 3; k++) normals.push(0, 1, 0);
+      shores.push(1, 0, 1);
+      flows.push(flowX, flowZ, flowX, flowZ, flowX, flowZ);
+    }
+
+    for (let i = 0; i < stations.length - 1; i++) {
+      const a = base + i * 3;
+      const b = a + 3;
+      // Counter-clockwise seen from above.
+      indices.push(a, b, b + 1, a, b + 1, a + 1);
+      indices.push(a + 1, b + 1, b + 2, a + 1, b + 2, a + 2);
     }
   }
 }

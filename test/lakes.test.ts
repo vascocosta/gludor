@@ -3,7 +3,7 @@ import { DEFAULT_WEATHER, LAKES, WORLD, type WeatherSettings } from "../src/conf
 import { Atmosphere } from "../src/sim/atmosphere";
 import { LiftField } from "../src/sim/lift";
 import { Simulation } from "../src/sim/simulation";
-import { Terrain, forEachLakeInBounds, type Lake } from "../src/sim/terrain";
+import { Terrain, forEachLakeInBounds, forEachRiverInBounds, type Lake } from "../src/sim/terrain";
 
 const stillAir: WeatherSettings = {
   ...DEFAULT_WEATHER,
@@ -94,6 +94,13 @@ describe("lakes", () => {
     const lakes = collectLakes(-60_000, -60_000, 60_000, 60_000);
     expect(lakes.length).toBeGreaterThan(0);
 
+    // Stream mouths intentionally breach the shore lip to form a small estuary,
+    // so the coarse collision grid can dip below the plane near them.
+    const mouths: { x: number; z: number }[] = [];
+    forEachRiverInBounds(-60_000, -60_000, 60_000, 60_000, (river) => {
+      if (river.mouth) mouths.push(river.mouth);
+    });
+
     for (const lake of lakes) {
       expect(terrain.waterLevelAt(lake.x, lake.z)).toBeCloseTo(lake.level, 6);
       // The lake bed is below the surface at its centre.
@@ -102,6 +109,9 @@ describe("lakes", () => {
       // The rendered shoreline sits just above the water all the way round.
       for (let k = 0; k < 72; k++) {
         const point = lakeBoundary(lake, 1.02, k, 72);
+        if (mouths.some((mouth) => Math.hypot(point.x - mouth.x, point.z - mouth.z) < 360)) {
+          continue;
+        }
         const ground = terrain.heightAt(point.x, point.z);
         expect(ground).toBeGreaterThan(lake.level + 0.15);
       }

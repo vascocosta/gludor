@@ -26,6 +26,7 @@ import { Airfield, createBackdrop, TreeField } from "./props";
 import { CloudField } from "./clouds";
 import { CloudShadows } from "./cloudShadows";
 import { GliderMesh, GLIDER_MODEL_DROP } from "./gliderMesh";
+import { RiverChannelField } from "./riverBanks";
 import { SkyDome } from "./sky";
 import { TerrainStreamer } from "./terrainMesh";
 import { ThermalParticles } from "./thermals";
@@ -150,6 +151,7 @@ export class WorldRenderer {
     this.backdrop = createBackdrop(this.scene);
     this.terrainStream = new TerrainStreamer(this.scene, this.cloudShadows);
     this.terrainStream.update(this.camera.position, 600);
+    new RiverChannelField(terrain, this.terrainStream.material, this.scene);
     this.trees = new TreeField(terrain, this.scene, WORLD.seed);
     this.cloudShadows.applyToObject(this.trees.group);
     this.trees.update(this.camera.position, 500);
@@ -516,8 +518,8 @@ export class WorldRenderer {
         this.camera.quaternion.multiply(new Quaternion().setFromEuler(this.shakeEuler));
       }
       this.setFov(72);
-      // The raised canopy sits close overhead: a nearer cockpit clip plane
-      // keeps the glass from being cut away when the pilot looks straight up.
+      // The cockpit glass sits just a few centimetres overhead: a nearer clip
+      // plane keeps it from being cut away when the pilot looks straight up.
       this.setNear(0.03);
       return;
     }

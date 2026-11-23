@@ -16,9 +16,9 @@ import { TOWNS } from "../config";
 import { BUILDING_SCALE, forEachTownInBounds, type Building, type Town } from "../sim/towns";
 import type { Terrain } from "../sim/terrain";
 
-const WALL_CAPACITY = 3000;
-const ROOF_CAPACITY = 3000;
-const WINDOW_CAPACITY = 12000;
+const WALL_CAPACITY = 6000;
+const ROOF_CAPACITY = 6000;
+const WINDOW_CAPACITY = 20000;
 const SPIRE_CAPACITY = 96;
 
 /** Plaster and stone for the walls. */
@@ -218,11 +218,11 @@ export class TownField {
     const cos = Math.cos(building.yaw);
     const sin = Math.sin(building.yaw);
 
-    const addWindow = (lx: number, lz: number, yaw: number): boolean => {
+    const addWindow = (lx: number, lz: number, yaw: number, floor: number): boolean => {
       if (this.windowCount >= WINDOW_CAPACITY) return false;
       const x = building.x + lx * cos + lz * sin;
       const z = building.z - lx * sin + lz * cos;
-      dummy.position.set(x, building.ground + building.wallHeight * 0.58, z);
+      dummy.position.set(x, building.ground + building.wallHeight * floor, z);
       dummy.rotation.set(0, building.yaw + yaw, 0);
       dummy.scale.set(0.62 * BUILDING_SCALE, 0.86 * BUILDING_SCALE, 1);
       dummy.updateMatrix();
@@ -231,49 +231,47 @@ export class TownField {
       return true;
     };
 
-    for (const side of [1, -1]) {
-      for (const along of [-0.24, 0.24]) {
-        const lx = along * building.width;
-        const lz = side * (building.depth / 2 + 0.04);
-        if (!addWindow(lx, lz, side > 0 ? 0 : Math.PI)) return;
+    // Cottages get one storey of windows. Taller blocks repeat them up the
+    // facade so their extra height does not read as a blank wall.
+    const floors = building.kind === "tenement" ? [0.22, 0.46, 0.7] : [0.58];
+    for (const floor of floors) {
+      for (const side of [1, -1]) {
+        for (const along of [-0.24, 0.24]) {
+          const lx = along * building.width;
+          const lz = side * (building.depth / 2 + 0.04);
+          if (!addWindow(lx, lz, side > 0 ? 0 : Math.PI, floor)) return;
+        }
+        // One window in each gable end, so the ends are not blank walls.
+        const end = side * (building.width / 2 + 0.04);
+        if (!addWindow(end, 0, side > 0 ? Math.PI / 2 : -Math.PI / 2, floor)) return;
       }
-      // One window in each gable end, so the ends are not blank walls.
-      const end = side * (building.width / 2 + 0.04);
-      if (!addWindow(end, 0, side > 0 ? Math.PI / 2 : -Math.PI / 2)) return;
     }
   }
 
   /** One quad ribbon per street, sampled along the ground. */
   private addStreets(town: Town): void {
-    const cos = Math.cos(town.angle);
-    const sin = Math.sin(town.angle);
-    // [direction X, direction Z, length, lateral offset]
-    const lanes: [number, number, number, number][] = [[cos, sin, town.streetLength, 0]];
-    if (town.crossLength > 0) lanes.push([-sin, cos, town.crossLength, 0]);
-    // Big towns get a parallel lane between the front and back rows.
-    if (town.radius > 320) {
-      const parallel = 20 * BUILDING_SCALE;
-      lanes.push([cos, sin, town.streetLength, parallel], [cos, sin, town.streetLength, -parallel]);
-    }
+    const half = town.streetWidth / 2;
 
-    for (const [dx, dz, length, offset] of lanes) {
+    for (const street of town.streets) {
+      const dx = Math.cos(street.angle);
+      const dz = Math.sin(street.angle);
       const px = -dz;
       const pz = dx;
-      const steps = Math.max(2, Math.ceil(length / 8));
-      const half = town.streetWidth / 2;
+      const length = street.length;
+      const steps = Math.max(2, Math.ceil(length / 4));
       let previous: { x: number; z: number; left: number; right: number } | null = null;
 
       for (let k = 0; k <= steps; k++) {
         const t = -length / 2 + (k / steps) * length;
-        const x = town.x + dx * t + px * offset;
-        const z = town.z + dz * t + pz * offset;
+        const x = street.x + dx * t;
+        const z = street.z + dz * t;
         const leftX = x - px * half;
         const leftZ = z - pz * half;
         const rightX = x + px * half;
         const rightZ = z + pz * half;
-        const left = this.terrain.heightAt(leftX, leftZ);
-        const right = this.terrain.heightAt(rightX, rightZ);
-        const middle = this.terrain.heightAt(x, z);
+        const left = this.terrain.renderHeightAt(leftX, leftZ);
+        const right = this.terrain.renderHeightAt(rightX, rightZ);
+        const middle = this.terrain.renderHeightAt(x, z);
         const water = this.terrain.waterLevelAt(x, z);
         if (water !== null && water > middle - 0.2) {
           previous = null;
@@ -295,7 +293,7 @@ export class TownField {
     half: number,
   ): void {
     const base = this.streetPositions.length / 3;
-    const lift = 0.06;
+    const lift = 0.1;
     const corners = [
       [from.x - px * half, from.left + lift, from.z - pz * half],
       [from.x + px * half, from.right + lift, from.z + pz * half],

@@ -322,15 +322,15 @@ export const TOW = {
   departTime: 24,
 } as const;
 
-/** Deterministic lake grid. Rivers are out of scope for V1; lakes are landmarks. */
+/** Deterministic lake grid. The hand-placed river network follows below. */
 export const LAKES = {
   /**
    * Lake country. The 2.5 km grid still puts a handful of lakes inside a short
-   * glide of the field, but a 0.4 chance leaves roughly half as many as the
-   * old fully saturated grid. The shore filters below decide where water fits.
+   * glide of the field, but a 0.2 chance halves the number of basins again
+   * from the previous grid. The shore filters below decide where water fits.
    */
   cellSize: 2500,
-  chance: 0.4,
+  chance: 0.2,
   minRadius: 170,
   radiusRange: 270,
   /** No lake centres inside this radius of the field. */
@@ -348,6 +348,102 @@ export const LAKES = {
 } as const;
 
 /**
+ * Hand-placed streams near the home field. They are deliberately finite and
+ * authored by hand, like the training ridges: a procedural world-wide river
+ * network needs flow routing and chunk continuity that V1 does not.
+ *
+ * Each point is [x, z, full width in metres]. Widths vary along the course, so
+ * the streams widen at their mouths and pinch at their sources.
+ */
+export const RIVERS = {
+  depth: 2.4,
+  bankWidth: 26,
+  stationSpacing: 12,
+  /** Reject town sites whose footprint reaches this close to a stream. */
+  townMargin: 300,
+  streams: [
+    {
+      // Western meltwater river: rises at the snow line of the snow-capped
+      // mountain at (-9500, 4900), descends its flank, then runs across the
+      // western shelf and follows the old valley into the lake at
+      // (-2873, -433). It stays clear of the airfield and home town.
+      points: [
+        [-9100, 4400, 30],
+        [-8950, 4250, 34],
+        [-8800, 4100, 38],
+        [-8650, 3950, 42],
+        [-8500, 3800, 46],
+        [-8350, 3650, 50],
+        [-8200, 3500, 54],
+        [-8100, 3300, 58],
+        [-8000, 3100, 62],
+        [-7900, 2900, 66],
+        [-7850, 2700, 70],
+        [-7800, 2500, 74],
+        [-7750, 2300, 78],
+        [-7600, 2150, 82],
+        [-7500, 1950, 86],
+        [-7350, 1800, 90],
+        [-7200, 1650, 94],
+        [-7050, 1500, 98],
+        [-6900, 1350, 102],
+        [-6750, 1200, 106],
+        [-6550, 1050, 110],
+        [-6400, 900, 112],
+        [-6250, 750, 114],
+        [-6100, 600, 116],
+        [-5950, 450, 118],
+        [-5750, 300, 120],
+        [-5600, 150, 121],
+        [-5400, 100, 122],
+        [-5150, 60, 123],
+        [-4900, 40, 124],
+        [-4650, 50, 125],
+        [-4400, 80, 125],
+        [-4150, 120, 125],
+        [-3900, 160, 125],
+        [-3650, 230, 125],
+        [-3600, 250, 124],
+        [-3400, 270, 122],
+        [-3200, 300, 120],
+        [-3040, 308, 118],
+        [-2880, 316, 116],
+        [-2800, 320, 114],
+        [-2717, 313, 112],
+        [-2633, 307, 110],
+        [-2550, 300, 108],
+        [-2500, 225, 106],
+        [-2450, 150, 104],
+        [-2467, 83, 102],
+        [-2483, 17, 100],
+        [-2500, -50, 98],
+        [-2550, -125, 96],
+        [-2600, -200, 94],
+        [-2675, -265, 90],
+        [-2750, -330, 86],
+        [-2812, -382, 82],
+        [-2873, -433, 78],
+      ],
+    },
+    {
+      // Eastern stream: from the higher ground east of the valley, west across
+      // the open ground south of the field and into a low meadow. This course
+      // stays in sight from the airfield and clear of the home-town plots.
+      points: [
+        [3500, 2000, 20],
+        [3000, 2000, 24],
+        [2500, 2020, 28],
+        [2000, 2000, 32],
+        [1500, 2010, 36],
+        [1000, 2000, 40],
+        [600, 2000, 44],
+        [150, 2000, 50],
+      ],
+    },
+  ],
+} as const;
+
+/**
  * Deterministic town grid. Same idea as the lakes: a cell either owns a
  * town or none, and the layout inside it is seeded from the cell, so a town
  * is identical however the world is streamed or revisited.
@@ -359,19 +455,20 @@ export const TOWNS = {
   keepOut: 3000,
   /**
    * A fixed town near the field, exempt from the keep-out. It gives the home
-   * landscape a proper landmark without crowding the circuit: 2.2 km southwest,
+   * landscape a proper landmark without crowding the circuit: 2.4 km southwest,
    * on flat, dry ground clear of the approach, with a forced church tower.
    */
   home: {
-    x: -1100,
-    z: 1900,
-    radius: 460,
+    x: -1200,
+    z: 2075,
+    radius: 920,
     angle: 0.35,
   },
-  minRadius: 240,
-  radiusRange: 320,
+  /** Radii are doubled from the old settlements, giving 4x the footprint area. */
+  minRadius: 480,
+  radiusRange: 640,
   /** Hard cap on buildings in one town. */
-  maxBuildings: 96,
+  maxBuildings: 450,
   /** Towns are farmland settlements, not hill stations. */
   maxCenterHeight: 700,
   /** Reject sites steeper than this (rise over run) at the centre and rim. */
@@ -426,13 +523,13 @@ export const FREE_CAMERA = {
  * to sit taller in the seat; `eyeForward` moves the eye fore/aft.
  */
 export const COCKPIT_VIEW = {
-  eyeHeight: 0.75,
+  eyeHeight: 0.67,
   eyeForward: -0.65,
   /**
    * Uniform scale for the dash, instrument panel, centre console, switches and
    * stick, anchored at the console base. 1 is the modelled size; try 0.85-1.2.
    */
-  consoleScale: 0.9,
+  consoleScale: 0.92,
 } as const;
 
 /** Streaming and procedural-content constants shared by the simulation and renderer. */

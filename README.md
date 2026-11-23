@@ -73,15 +73,31 @@ assist off entirely. Release with Space at any time, or let the tow release
 itself at 1,200 m AGL. The tug flies on for a few seconds after the release
 before it leaves the scene.
 
-## Lakes and landmarks
+## Lakes, rivers and landmarks
 
-Lakes come and go as you fly: dark teal water in a carved basin, a lighter
+Lakes come and go as you fly: deep blue water in a carved basin, a lighter
 shelving shoreline, and wind-stretched ripples that catch the light. They are
 landmarks rather than obstacles. Water starts no thermals and grows no trees,
 and arriving on one is a forgiving ditching instead of a crash — wet, slow, and
 a long tow home.
 
 ![The GD-81 over a lake](docs/lakes.jpg)
+
+### Rivers
+
+Two hand-placed streams run through the home valley. The western river rises on
+the snow line of the ice-capped mountain west of the field and runs all the way
+down into the lake in the western valley, widening from roughly 30 m to 125 m
+on the way and entering through a small estuary. The eastern stream runs west across
+the open ground south of the airfield into a low meadow, widening from about
+20 m to 50 m. The width changes along every course, and the water carries a
+travelling flow wave, so the ribbons do not look static.
+
+The channels are carved into the terrain and count as water for ditching. Town
+sites keep clear of the stream corridors, so roads do not cross water until
+bridges become worthwhile.
+
+![The western river crossing the valley below the snow line](docs/river.jpg)
 
 ## Mountains
 
@@ -112,22 +128,24 @@ so a windward alpine slope works as well as the home ridge.
 Towns appear on the same seeded pattern as everything else: a 6 km hash grid
 decides where one stands, and each is laid out from its own cell seed, so a
 town is identical every time you fly over it. Apart from the home town, the
-nearest is about 6 km from the field, and roughly ten sit within a normal 18 km
-glide.
+nearest is about 6 km from the field, and around half a dozen sit within a
+normal 18 km glide.
 
-A fixed home town stands 2.2 km southwest of the airfield, on flat, dry ground
+A fixed home town stands 2.4 km southwest of the airfield, on flat, dry ground
 clear of the approach, so there is always a landmark in sight from the field.
-It is one of the larger settlements — around thirty-five houses — and always
-gets a church tower. The rest obey a 3 km keep-out around the field and never
-crowd the home town.
+It is one of the larger settlements — around 400 buildings — and always gets a
+church tower. The rest obey a 3 km keep-out around the field and never crowd the
+home town.
 
-Most towns are a proper size now: a long main street with rows of cottages and
-barns on both sides, a cross lane, and some outlying farmsteads. The biggest
-add two parallel back lanes and can run to about fifty buildings, while the
-smallest still keep a main street and a cross lane. Houses are deliberately
-oversized — twice life-size — so they read from soaring altitude; their plots,
-streets and spacing scale with them. Roofs are solid, so a low arrival over a
-town ends the flight — pick a clear field instead of a garden.
+Most towns are a proper size now: the footprint covers four times its old area
+and the streets form a dense square grid rather than one long cross. Nine lanes
+run in each direction, making an 8 × 8 pattern of blocks with rows of cottages
+and barns along every street and a handful of three- and four-storey tenements.
+The largest settlements run past 400 buildings, while the smallest still have
+about 185. Houses are deliberately oversized — twice life-size — so they read
+from soaring altitude; their plots, streets and spacing scale with them. Roofs
+are solid, so a low arrival over a town ends the flight — pick a clear field
+instead of a garden.
 
 ![A town from the air](docs/town.jpg)
 
@@ -144,7 +162,7 @@ Open the printed URL (normally <http://localhost:5173>), pick a weather preset
 and a launch, then press **Fly**.
 
 ```bash
-npm test        # 49 headless flight/aero/weather/streaming/lake/town/mountain/tow tests
+npm test        # 63 headless flight/aero/weather/streaming/lake/river/town/mountain/tow tests
 npm run typecheck
 npm run build   # static production build in dist/
 npm run preview # serve the production build locally
@@ -211,14 +229,14 @@ On the menu, **Enter** starts the selected flight.
 
 ![Cockpit view](docs/cockpit.jpg)
 
-`C` cycles chase → cockpit → orbit. The canopy is a tall bubble whose sill
+`C` cycles chase → cockpit → orbit. The canopy is a compact bubble whose sill
 stays flush on the fuselage; from the pilot's seat it is a thin reflective inner
 shell with a front bow and glinting edges, so you are aware of the glass without
 it fogging the view. The side rails, centre stick and centre
 console stay in sight, with the nose below the panel giving the horizon
 reference; mouse-drag looks around, and `Z` / `X` toggle a shoulder check to the
-left or right. The panel sits low under the coaming, the canopy rises above the
-eye, and the nose line falls away ahead of it, so the aiming point stays in view
+left or right. The panel sits low under the coaming, the canopy clears the eye,
+and the nose line falls away ahead of it, so the aiming point stays in view
 as the nose comes up; below 20 m a compact flare strip shows height and sink in
 the bottom corner.
 The dash is a moulded arch that sweeps down into deep knee cut-outs either side
@@ -315,7 +333,14 @@ basin (two water planes cannot share one shore). The carve is applied inside the
 analytic ground function, which keeps physics, terrain tiles, tree placement, and
 the water mesh in agreement. A 1.3 km keep-out protects the runway and the home
 thermal. All visible lakes are merged into one water mesh and one draw call; the
-shader adds an opaque teal body, a shallow rim, and animated ripple normals.
+shader adds an opaque deep-blue body, a shallow rim, and animated ripple normals.
+
+Rivers use the same water shader, but the coarse terrain tiles cannot resolve
+their channels. The terrain streamer cuts the stream corridors out of every LOD,
+and a high-resolution bank mesh fills the cut with samples clustered on the
+water and banks, so a sloping bank triangle cannot bridge over the ribbon. A
+separate river query feeds the water mesh, the carve, ditching, and town
+keep-outs from one shared station list.
 
 Woodland streams in deterministic 1 km cells within 10 km of the glider, and
 copse placement is derived from a per-cell hash, so the same wood always grows
@@ -356,10 +381,10 @@ the sun direction, so ground shadows stay aligned with the visible sky.
 ### Rendering and UI
 
 Three.js draws a stylized low-poly scene: smooth-shaded, vertex-colored terrain
-chunks, opaque lake surfaces, clustered towns, a procedural sky, soft cumulus
-clouds, baked cloud shadows, the GD-81 mesh, the winch/tow cable, the procedural
-aerotow tug and its spinning propeller, and thermal particles. The HUD is a
-separate 2D canvas with vector-drawn instruments. Audio is synthesized with
+chunks, opaque lake and river surfaces, clustered towns, a procedural sky, soft
+cumulus clouds, baked cloud shadows, the GD-81 mesh, the winch/tow cable, the
+procedural aerotow tug and its spinning propeller, and thermal particles. The
+HUD is a separate 2D canvas with vector-drawn instruments. Audio is synthesized with
 WebAudio: filtered wind noise scaled by IAS, vario lift beeps and a low sink
 tone, a stall horn, a landing thump, and a filtered engine drone while the tug
 is on the rope. An optional generative score (`M`) picks a new key and tempo
@@ -375,7 +400,7 @@ src/
   main.ts            app state, fixed-step loop, input/UI/audio wiring
   core/              small math and seeded RNG helpers
   sim/
-    terrain.ts       analytic ground, mountains, lake carving, airfield flattening
+    terrain.ts       analytic ground, mountains, lake and river carving, airfield flattening
     towns.ts         deterministic towns, footprints, roof queries
     atmosphere.ts    ISA density, wind shear, veer, turbulence
     lift.ts          thermal, ridge, and sink field
@@ -383,12 +408,12 @@ src/
     towplane.ts      scripted aerotow tug: roll, climb, turn, release, departure
     simulation.ts    6DOF flight loop, winch and aerotow rope, ground/water/roof
                      contact, landing rollout, telemetry
-  render/            Three.js scene, terrain/water/town/glider/cloud/sky meshes,
+  render/            Three.js scene, terrain/water/river-bank/town/glider/cloud/sky meshes,
                      and the procedural aerotow tug
   ui/                HUD instruments and menu/pause/summary wiring
   input/             keyboard state
   audio/             procedural WebAudio soundscape
-test/                aero, flight, weather, streaming, lake, town, mountain,
+test/                aero, flight, weather, streaming, lake, river, town, mountain,
                      aerotow, and landing-rollout tests
 ```
 
@@ -409,6 +434,9 @@ The headless suite exercises the model rather than the DOM:
 - Lakes: deterministic generation, airfield exclusion, sensible landmark
   density, shoreline containment, water-aware thermals, and ditching rather
   than crashing.
+- Rivers: deterministic hand-placed courses, terrain-following profiles with an
+  overall descent, carved beds, water-level queries, town clearance, and
+  ditching on a stream.
 - Landings: touchdown enters a rollout rather than ending immediately, wheel
   braking shortens the roll, rudder steering turns it, it cannot bounce back
   into the air, air time freezes at touchdown, and it settles into the landed
@@ -427,7 +455,7 @@ The headless suite exercises the model rather than the DOM:
 npm test
 ```
 
-Expected: **49 passing tests**.
+Expected: **63 passing tests**.
 
 ## Deployment
 
@@ -446,9 +474,9 @@ npm run build -- --base=/gludor/
 - The flight model is "study-lite": plausible handling and energy behavior, not
   a validated engineering simulation.
 - The world is procedural and stylized, not real terrain.
-- Water is a single flat surface per lake. At far distances the 400 m terrain
-  tier only approximates small basins, so a distant lake can look simpler than
-  it does up close.
+- Lakes are flat surfaces; rivers follow a sloping profile. At far distances the
+  400 m terrain tier only approximates small basins, so a distant lake or river
+  can look simpler than it does up close.
 - Towns sit on the existing ground instead of flattening it. Walls are sunk
   into the plot to hide slopes, but a very steep site can still show a small
   step at a building's uphill edge.

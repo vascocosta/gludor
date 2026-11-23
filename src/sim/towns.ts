@@ -1,9 +1,9 @@
-import { TOWNS, WORLD, type WorldConfig } from "../config";
+import { RIVERS, TOWNS, WORLD, type WorldConfig } from "../config";
 import { hash2, mulberry32, type Rng } from "../core/rng";
-import { terrainHeightAt, waterLevelAt } from "./terrain";
+import { riverIntersectsCircle, terrainHeightAt, waterLevelAt } from "./terrain";
 
 /** Buildings are simple boxes with a gabled or pyramidal roof. */
-export type BuildingKind = "cottage" | "barn" | "tower";
+export type BuildingKind = "cottage" | "barn" | "tower" | "tenement";
 
 export interface Building {
   /** Centre of the footprint. */
@@ -22,16 +22,25 @@ export interface Building {
   tint: number;
 }
 
+export interface Street {
+  /** Centre of the lane. */
+  x: number;
+  z: number;
+  /** Direction of the lane. */
+  angle: number;
+  length: number;
+}
+
 export interface Town {
   x: number;
   z: number;
   radius: number;
   angle: number;
-  /** Main street runs along `angle`, centred on the town. */
+  /** Main street length and width; the grid uses the same dimensions. */
   streetLength: number;
   streetWidth: number;
-  /** Length of the short cross lane, or 0 for a hamlet. */
-  crossLength: number;
+  /** Grid of streets: nine along `angle`, nine across it. */
+  streets: Street[];
   buildings: Building[];
   /** True for the fixed town that anchors the home landscape. */
   home?: boolean;
@@ -63,6 +72,12 @@ const TOWN_MAX_BUILDINGS = TOWNS.maxBuildings;
  * follow, because they are derived from the scaled fields.
  */
 export const BUILDING_SCALE = 2;
+
+/** Number of street lines in each direction. Nine makes an 8 x 8 block grid. */
+const TOWN_GRID = 9;
+
+/** Street frontage per building plot, including its garden and spacing. */
+const TOWN_FRONTAGE = 50 * BUILDING_SCALE;
 
 /** Slope in rise over run, sampled on a 40 m baseline. */
 function slopeAt(x: number, z: number, config: WorldConfig): number {
@@ -99,6 +114,12 @@ function makeTown(i: number, j: number, config: WorldConfig): Town | null {
   // The home town owns its corner of the valley.
   const homeReach = (base.radius + TOWNS.home.radius) * 1.2;
   if (Math.hypot(base.x - TOWNS.home.x, base.z - TOWNS.home.z) < homeReach) return null;
+
+  // Streams are hand-placed, so give them a wide berth. This keeps town roads
+  // and buildings out of the channel until bridges are worth adding.
+  if (riverIntersectsCircle(base.x, base.z, base.radius + RIVERS.townMargin, config)) {
+    return null;
+  }
 
   // Two towns cannot share a valley bottom. Keep the lower-indexed cell and
   // drop the later one, so the result never depends on query order.
@@ -144,6 +165,43 @@ function toWorld(x: number, z: number, yaw: number, lx: number, lz: number): { x
   return { x: x + lx * cos + lz * sin, z: z - lx * sin + lz * cos };
 }
 
+/** Whether two rotated footprints intersect, with a little breathing room. */
+function footprintsOverlap(
+  ax: number,
+  az: number,
+  ayaw: number,
+  aw: number,
+  ad: number,
+  bx: number,
+  bz: number,
+  byaw: number,
+  bw: number,
+  bd: number,
+): boolean {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const ac = Math.cos(ayaw);
+  const as = Math.sin(ayaw);
+  const bc = Math.cos(byaw);
+  const bs = Math.sin(byaw);
+  const axes: Array<[number, number]> = [
+    [ac, -as],
+    [as, ac],
+    [bc, -bs],
+    [bs, bc],
+  ];
+
+  for (const [ux, uz] of axes) {
+    const distance = Math.abs(dx * ux + dz * uz);
+    const reachA =
+      (aw / 2) * Math.abs(ac * ux - as * uz) + (ad / 2) * Math.abs(as * ux + ac * uz);
+    const reachB =
+      (bw / 2) * Math.abs(bc * ux - bs * uz) + (bd / 2) * Math.abs(bs * ux + bc * uz);
+    if (distance > reachA + reachB + 0.5) return false;
+  }
+  return true;
+}
+
 function tryAddBuilding(
   list: Building[],
   x: number,
@@ -170,6 +228,13 @@ function tryAddBuilding(
     depth = 4.6;
     wallHeight = 12 + rng() * 5;
     roofHeight = 3.5 + rng() * 1.5;
+  } else if (kind === "tenement") {
+    // Three or four storeys, and a larger footprint than a cottage: these are
+    // the taller blocks that give the bigger towns a skyline.
+    width = 7.8 + rng() * 2.4;
+    depth = 5.2 + rng() * 1.6;
+    wallHeight = 5.6 + rng() * 2.8;
+    roofHeight = 1.5 + rng() * 0.8;
   } else {
     width = 5.5 + rng() * 3;
     depth = 4 + rng() * 2;
@@ -181,6 +246,16 @@ function tryAddBuilding(
   depth *= BUILDING_SCALE;
   wallHeight *= BUILDING_SCALE;
   roofHeight *= BUILDING_SCALE;
+
+  // Bigger towns have more rows and outliers, so keep their plots from
+  // spilling into each other. A small gap also stops roofs from z-fighting.
+  if (
+    list.some((other) =>
+      footprintsOverlap(x, z, yaw, width, depth, other.x, other.z, other.yaw, other.width, other.depth),
+    )
+  ) {
+    return;
+  }
 
   let ground = Number.POSITIVE_INFINITY;
   let highest = Number.NEGATIVE_INFINITY;
@@ -225,62 +300,48 @@ function layoutTown(base: TownBase, config: WorldConfig): Town {
 
   const streetLength = radius * 1.3;
   const streetWidth = (radius > 320 ? 5.6 : 4.6) * BUILDING_SCALE;
-  const crossLength = radius > 210 ? radius * 0.8 : 0;
-
-  // Rows follow the renderer's street direction (cos, sin); negating the yaw
-  // keeps each ridge parallel to the lane it faces.
-  const houseYaw = -angle;
-
-  // Two rows of houses facing the street, with a little wobble so the row is
-  // not a ruler-straight line. Frontage scales with the house size.
-  const perRow = Math.min(
-    20,
-    Math.max(3, Math.round(streetLength / (34 * BUILDING_SCALE)) + Math.floor(rng() * 3) - 1),
-  );
-  const spacing = streetLength / (perRow + 1);
-  for (const side of [-1, 1]) {
-    const offset = (9 + rng() * 3) * BUILDING_SCALE;
-    for (let n = 1; n <= perRow; n++) {
-      const u = -streetLength / 2 + n * spacing + (rng() - 0.5) * 5;
-      const v = side * (offset + rng() * 2.5);
-      const bx = x + u * cos - v * sin;
-      const bz = z + u * sin + v * cos;
-      const yaw = houseYaw + (rng() - 0.5) * 0.1;
-      const kind: BuildingKind = rng() < 0.18 ? "barn" : "cottage";
-      tryAddBuilding(buildings, bx, bz, yaw, kind, rng, config);
-    }
+  const gridStep = streetLength / TOWN_GRID;
+  const gridStart = -((TOWN_GRID - 1) / 2) * gridStep;
+  const streets: Street[] = [];
+  for (let i = 0; i < TOWN_GRID; i++) {
+    const offset = gridStart + i * gridStep;
+    // Parallel lanes in both directions make a square grid of blocks.
+    streets.push({ x: x - sin * offset, z: z + cos * offset, angle, length: streetLength });
+    streets.push({
+      x: x - cos * offset,
+      z: z - sin * offset,
+      angle: angle + Math.PI / 2,
+      length: streetLength,
+    });
   }
 
-  // Roomier towns get a back row on each side, so the settlement has depth
-  // instead of being a single ribbon along the road.
-  if (radius > 320) {
+  // Frontage scales with house size. Every street gets rows on both sides,
+  // which fills the blocks instead of leaving a long empty cross.
+  for (const street of streets) {
+    const sc = Math.cos(street.angle);
+    const ss = Math.sin(street.angle);
+    // Rows follow the lane; negating the yaw keeps each ridge parallel to it.
+    const houseYaw = -street.angle;
+    const perRow = Math.min(
+      20,
+      Math.max(
+        3,
+        Math.round(street.length / TOWN_FRONTAGE) + Math.floor(rng() * 3) - 1,
+      ),
+    );
+    const spacing = street.length / (perRow + 1);
+
     for (const side of [-1, 1]) {
-      const backPerRow = Math.max(2, Math.round(perRow * 0.65));
-      const backSpacing = streetLength / (backPerRow + 1);
-      for (let n = 1; n <= backPerRow; n++) {
-        const u = -streetLength / 2 + n * backSpacing + (rng() - 0.5) * 8;
-        const v = side * (31 + rng() * 7) * BUILDING_SCALE;
-        const bx = x + u * cos - v * sin;
-        const bz = z + u * sin + v * cos;
+      const offset = (9 + rng() * 3) * BUILDING_SCALE;
+      for (let n = 1; n <= perRow; n++) {
+        const u = -street.length / 2 + n * spacing + (rng() - 0.5) * 5;
+        const v = side * (offset + rng() * 2.5);
+        const bx = street.x + u * sc - v * ss;
+        const bz = street.z + u * ss + v * sc;
         const yaw = houseYaw + (rng() - 0.5) * 0.1;
-        const kind: BuildingKind = rng() < 0.24 ? "barn" : "cottage";
+        const tenement = radius > 650 && rng() < 0.05;
+        const kind: BuildingKind = tenement ? "tenement" : rng() < 0.18 ? "barn" : "cottage";
         tryAddBuilding(buildings, bx, bz, yaw, kind, rng, config);
-      }
-    }
-  }
-
-  // The cross lane needs its own frontage, or the side street runs through an
-  // empty field.
-  if (crossLength > 0) {
-    const crossHouses = Math.max(1, Math.round(crossLength / (65 * BUILDING_SCALE)));
-    for (let n = 1; n <= crossHouses; n++) {
-      const along = -crossLength / 2 + (n / (crossHouses + 1)) * crossLength + (rng() - 0.5) * 5;
-      for (const side of [-1, 1]) {
-        const across = side * (9 + rng() * 3) * BUILDING_SCALE;
-        const bx = x - sin * along + cos * across;
-        const bz = z + cos * along + sin * across;
-        const yaw = houseYaw - Math.PI / 2 + (rng() - 0.5) * 0.1;
-        tryAddBuilding(buildings, bx, bz, yaw, "cottage", rng, config);
       }
     }
   }
@@ -296,11 +357,21 @@ function layoutTown(base: TownBase, config: WorldConfig): Town {
     tryAddBuilding(buildings, bx, bz, rng() * Math.PI, kind, rng, config);
   }
 
-  // A church tower anchors the larger towns. The home town always gets one,
-  // so it reads as a landmark from the field.
+  // A church tower anchors the larger towns. Put it in one of the blocks, not
+  // on a lane, where it can be a landmark without blocking the grid. The home
+  // town always gets one so it reads from the field.
   if (base.forceTower || (radius > 280 && rng() < 0.55)) {
-    const u = (rng() - 0.5) * streetLength * 0.35;
-    tryAddBuilding(buildings, x + u * cos, z + u * sin, houseYaw, "tower", rng, config);
+    const u = (rng() < 0.5 ? -1 : 1) * gridStep * 0.5;
+    const v = (rng() < 0.5 ? -1 : 1) * gridStep * 0.5;
+    tryAddBuilding(
+      buildings,
+      x + u * cos - v * sin,
+      z + u * sin + v * cos,
+      -angle,
+      "tower",
+      rng,
+      config,
+    );
   }
 
   return {
@@ -310,7 +381,7 @@ function layoutTown(base: TownBase, config: WorldConfig): Town {
     angle,
     streetLength,
     streetWidth,
-    crossLength,
+    streets,
     buildings,
     home: base.home,
   };
