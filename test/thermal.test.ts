@@ -61,6 +61,22 @@ it("holds a broad core instead of a narrow Gaussian peak", () => {
   expect(sample.thermal).toBeGreaterThan(thermal.strength * 0.7);
 });
 
+it("keeps a wide core at a banked-climb offset", () => {
+  const terrain = new Terrain();
+  const field = new LiftField(terrain, new Atmosphere(stillAir, terrain, 1), stillAir, 1);
+  const home = field.thermals.find(
+    (thermal) => Math.abs(thermal.x - 620) < 1e-6 && Math.abs(thermal.z + 720) < 1e-6,
+  );
+  expect(home).toBeDefined();
+
+  const thermal = home!;
+  const y = (thermal.base + thermal.top) / 2;
+  // 900 m from the centre used to be outside the working core; with the wider
+  // column it should still carry most of the lift for a banked climb.
+  const sample = field.sample(new Vector3(thermal.x + 900, y, thermal.z), 0);
+  expect(sample.thermal).toBeGreaterThan(thermal.strength * 0.8);
+});
+
 it("keeps the lift column fixed under its cloud marker", () => {
   const terrain = new Terrain();
   const weather = { ...DEFAULT_WEATHER, thermalStrength: 2.6 };
@@ -86,7 +102,8 @@ it("reports a workable radius and whether the glider is inside the column", () =
   expect(info).not.toBeNull();
   expect(info!.active).toBe(true);
   expect(info!.distance).toBeLessThan(20);
-  expect(info!.radius).toBeGreaterThan(680);
+  // The doubled home column is well over 1.3 km in radius near the middle.
+  expect(info!.radius).toBeGreaterThan(1300);
 
   sim.position.set(620, 2100, -720);
   sim.step(1 / 240);

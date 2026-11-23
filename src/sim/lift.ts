@@ -10,18 +10,23 @@ const HOME_Z = -720;
 const REBUILD_DISTANCE = 2000;
 const THERMAL_CHANCE = 0.14;
 /**
- * Global size multiplier for lift columns. The cloud markers derive their
- * footprint from the same radius, so scaling this keeps the visible cumulus
- * an honest map of the lift underneath.
+ * Baseline radius scale for a thermal's cloud marker. The lift column adds
+ * `THERMAL_LIFT_WIDTH` on top, so the core can be widened without turning
+ * every marker into an enormous cloud.
  */
 const THERMAL_RADIUS_SCALE = 2;
+/** Extra width of the lift column beyond its marker cloud. */
+const THERMAL_LIFT_WIDTH = 2;
 
 export interface Thermal {
   x: number;
   z: number;
   base: number;
   top: number;
+  /** Working lift radius. */
   radius: number;
+  /** Footprint used for the marker cloud, kept smaller than the lift. */
+  cloudRadius: number;
   strength: number;
 }
 
@@ -128,21 +133,25 @@ export class LiftField {
 
     const strength = this.settings.thermalStrength * (0.55 + rng() * 0.75);
     // A workable core: wide enough that a 40-45 degree circle stays inside it,
-    // with a little extra width on strong days.
-    const radius =
+    // with a little extra width on strong days. The marker cloud keeps the
+    // smaller baseline footprint.
+    const cloudRadius =
       THERMAL_RADIUS_SCALE * (200 + rng() * 120 + this.settings.thermalStrength * 12);
+    const radius = cloudRadius * THERMAL_LIFT_WIDTH;
     const base = ground + 60 + rng() * 90;
-    return this.makeThermal(x, z, base, this.settings.cloudBase, radius, strength);
+    return this.makeThermal(x, z, base, this.settings.cloudBase, radius, cloudRadius, strength);
   }
 
   private makeHomeThermal(): Thermal {
     const base = this.terrain.heightAt(HOME_X, HOME_Z);
+    const cloudRadius = 340 * THERMAL_RADIUS_SCALE;
     return this.makeThermal(
       HOME_X,
       HOME_Z,
       base + 70,
       this.settings.cloudBase,
-      340 * THERMAL_RADIUS_SCALE,
+      cloudRadius * THERMAL_LIFT_WIDTH,
+      cloudRadius,
       this.settings.thermalStrength * 1.12,
     );
   }
@@ -153,6 +162,7 @@ export class LiftField {
     base: number,
     top: number,
     radius: number,
+    cloudRadius: number,
     strength: number,
   ): Thermal {
     return {
@@ -161,6 +171,7 @@ export class LiftField {
       base,
       top: Math.max(base + 250, top),
       radius,
+      cloudRadius,
       strength,
     };
   }

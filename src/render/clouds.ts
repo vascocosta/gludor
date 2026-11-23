@@ -420,6 +420,8 @@ export class CloudField {
 
     liftField.forEachThermalInBounds(x0, z0, x1, z1, (thermal: Thermal) => {
       thermalPositions.push({ x: thermal.x, z: thermal.z });
+      // The marker stays smaller than the widened lift column, so the cloud
+      // shows the core without filling the sky.
       sources.push(
         addCloud(
           parts,
@@ -429,8 +431,8 @@ export class CloudField {
           thermal.x,
           thermal.z,
           this.cloudBase,
-          thermal.radius * (1.2 + rng() * 0.15),
-          thermal.radius * (0.68 + rng() * 0.22),
+          thermal.cloudRadius * (1.2 + rng() * 0.15),
+          thermal.cloudRadius * (0.68 + rng() * 0.22),
         ),
       );
     });
