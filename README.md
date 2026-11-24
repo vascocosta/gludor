@@ -364,14 +364,15 @@ hide slopes rather than flattening the terrain.
 Thermals come from a deterministic 2.5 km hash grid that is rebuilt around the
 glider every 2 km; the dependable home thermal at (620, −720) is always present
 near the field. Lake surfaces cool the boundary layer, so their cells start no
-thermals. Cores are generously wide and flat-topped rather than sharply peaked,
-widen with height, and stay fixed under their cloud markers so the sky you aim
-at is the air you get. Each marker cloud takes its footprint straight from the
-thermal radius, so the visible cumulus maps the lift instead of hiding it. The
-field also includes compensating sink and ridge lift computed from the terrain
-gradient and wind. Wind uses a logarithmic boundary-layer profile, a few
-degrees of veer per kilometre, and seeded multi-frequency gusts whose amplitude
-scales with speed and the turbulence setting.
+thermals. Cores are deliberately wide — roughly 1.6–3 km across at their base,
+depending on the day — and flat-topped rather than sharply peaked, widen with
+height, and stay fixed under their cloud markers so the sky you aim at is the
+air you get. The marker cloud keeps a tighter footprint over the strong core,
+so the lift fades out well beyond the visible cumulus instead of stopping at
+its edge. The field also includes compensating sink and ridge lift computed
+from the terrain gradient and wind. Wind uses a logarithmic boundary-layer
+profile, a few degrees of veer per kilometre, and seeded multi-frequency gusts
+whose amplitude scales with speed and the turbulence setting.
 
 Clouds stream as 16 km tiles in a 5 × 5 window, with a couple of background
 cumulus per tile plus one marker cloud above each thermal. A rolling 32 km
