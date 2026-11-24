@@ -537,37 +537,49 @@ export class Hud {
     const infos = sim.getNearestAirfieldInfos(2);
     if (infos.length === 0) return;
     const ctx = this.ctx;
-    const x = this.width - 108;
-    const y = 116;
-    const rowGap = 44;
+    const width = 170;
+    const right = this.width - 20;
+    const x = right - width;
+    const top = 92;
+    const rowGap = 42;
     this.roundRect(
-      x - 16,
-      y - 24,
-      104,
-      76 + (infos.length - 1) * rowGap,
+      x,
+      top,
+      width,
+      46 + (infos.length - 1) * rowGap,
       10,
       "rgba(8,13,17,0.66)",
       BORDER,
     );
 
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
     for (let i = 0; i < infos.length; i++) {
       const info = infos[i];
-      const rowY = y + i * rowGap;
-      this.drawBearingArrow(x + 20, rowY + 8, info.bearing, sim.heading, CYAN);
+      const rowY = top + i * rowGap;
+      this.drawBearingArrow(x + 18, rowY + 17, info.bearing, sim.heading, CYAN);
 
-      ctx.font = "600 11px ui-monospace, SFMono-Regular, Menlo, monospace";
-      ctx.fillStyle = "#cfe2e7";
-      ctx.fillText(this.formatDistance(info.distance), x + 34, rowY + 2);
-
-      ctx.fillStyle = "rgba(143, 227, 242, 0.75)";
-      ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillStyle = "#e8f4f7";
       ctx.fillText(
-        `${info.field.home ? "HOME" : runwayNumbers(info.field)} · ${Math.round(info.field.length)} m`,
-        x - 6,
-        rowY + 24,
+        info.field.home ? `${info.field.name} · HOME` : info.field.name,
+        x + 32,
+        rowY + 17,
       );
+
+      ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillStyle = "rgba(143, 227, 242, 0.75)";
+      ctx.fillText(
+        `${runwayNumbers(info.field)} · ${Math.round(info.field.length)} m`,
+        x + 32,
+        rowY + 34,
+      );
+
+      ctx.textAlign = "right";
+      ctx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillStyle = "#cfe2e7";
+      ctx.fillText(this.formatDistance(info.distance), right - 12, rowY + 34);
+      ctx.textAlign = "left";
     }
   }
 

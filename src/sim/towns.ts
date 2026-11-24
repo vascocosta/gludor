@@ -32,6 +32,8 @@ export interface Street {
 }
 
 export interface Town {
+  /** Fictional settlement name; the home town is always Brackenmoor. */
+  name: string;
   x: number;
   z: number;
   radius: number;
@@ -47,6 +49,7 @@ export interface Town {
 }
 
 interface TownBase {
+  name: string;
   x: number;
   z: number;
   radius: number;
@@ -79,6 +82,123 @@ const TOWN_GRID = 9;
 /** Street frontage per building plot, including its garden and spacing. */
 const TOWN_FRONTAGE = 50 * BUILDING_SCALE;
 
+/** The fixed town that anchors the home landscape. */
+export const HOME_TOWN_NAME = "Brackenmoor";
+
+/** Fictional place-name pieces, combined deterministically per town cell. */
+const TOWN_NAME_FIRST = [
+  "Alder",
+  "Ash",
+  "Birch",
+  "Bracken",
+  "Bramble",
+  "Bram",
+  "Cald",
+  "Cedar",
+  "Crow",
+  "Dun",
+  "Elm",
+  "Fen",
+  "Fox",
+  "Glen",
+  "Gorse",
+  "Harrow",
+  "Hazel",
+  "Heather",
+  "Heron",
+  "Holly",
+  "Ingle",
+  "Ivy",
+  "Kest",
+  "Lark",
+  "Linden",
+  "Mallow",
+  "Maple",
+  "Marten",
+  "Moor",
+  "Nettle",
+  "Oak",
+  "Otter",
+  "Pike",
+  "Pine",
+  "Quill",
+  "Raven",
+  "Rook",
+  "Rowan",
+  "Sable",
+  "Sallow",
+  "Sorrel",
+  "Stag",
+  "Tansy",
+  "Thorn",
+  "Under",
+  "Vale",
+  "Willow",
+  "Wren",
+  "Yarrow",
+  "Yew",
+];
+
+const TOWN_NAME_SUFFIX = [
+  "by",
+  "thorpe",
+  "ford",
+  "ham",
+  "wick",
+  "stead",
+  "combe",
+  "moor",
+  "dale",
+  "haven",
+  "cross",
+  "ridge",
+  "gate",
+  "field",
+  "brook",
+  "stone",
+  "well",
+  "bury",
+  "worth",
+  "shaw",
+  "holme",
+  "marsh",
+  "cliff",
+  "crest",
+  "reach",
+  "wood",
+  "hurst",
+  "den",
+  "holm",
+  "land",
+  "mere",
+  "ness",
+  "port",
+  "hill",
+];
+
+const TOWN_NAME_QUALIFIER = [
+  "Upper",
+  "Lower",
+  "Little",
+  "Great",
+  "Nether",
+  "Over",
+  "New",
+  "Old",
+];
+
+/** A stable, seeded name for one town cell. Never draws from the layout RNG. */
+function townName(i: number, j: number, seed: number): string {
+  const rng = mulberry32(Math.floor(hash2(i, j, seed + 14633) * 4294967296));
+  const first = TOWN_NAME_FIRST[Math.floor(rng() * TOWN_NAME_FIRST.length)];
+  const suffix = TOWN_NAME_SUFFIX[Math.floor(rng() * TOWN_NAME_SUFFIX.length)];
+  const qualifier =
+    rng() < 0.2
+      ? `${TOWN_NAME_QUALIFIER[Math.floor(rng() * TOWN_NAME_QUALIFIER.length)]} `
+      : "";
+  return `${qualifier}${first}${suffix}`;
+}
+
 /** Slope in rise over run, sampled on a 40 m baseline. */
 function slopeAt(x: number, z: number, config: WorldConfig): number {
   const d = 40;
@@ -97,6 +217,7 @@ function townBase(i: number, j: number, config: WorldConfig): TownBase | null {
   if (rng() > TOWN_CHANCE) return null;
 
   return {
+    name: townName(i, j, config.seed),
     x: (i + rng()) * TOWN_CELL,
     z: (j + rng()) * TOWN_CELL,
     radius: TOWN_MIN_RADIUS + rng() * TOWN_RADIUS_RANGE,
@@ -107,6 +228,7 @@ function townBase(i: number, j: number, config: WorldConfig): TownBase | null {
 
 /** Position and size of a town, before any buildings are laid out. */
 export interface TownAnchor {
+  name: string;
   x: number;
   z: number;
   radius: number;
@@ -389,6 +511,7 @@ function layoutTown(base: TownBase, config: WorldConfig): Town {
   }
 
   return {
+    name: base.name,
     x,
     z,
     radius,
@@ -424,6 +547,7 @@ function homeTownFor(config: WorldConfig): Town {
   );
   homeTownCache = layoutTown(
     {
+      name: HOME_TOWN_NAME,
       x: home.x,
       z: home.z,
       radius: home.radius,
@@ -465,7 +589,13 @@ function anchorAtCell(i: number, j: number, config: WorldConfig): TownAnchor | n
 
   const placed = placeTown(i, j, config);
   const anchor = placed
-    ? { x: placed.x, z: placed.z, radius: placed.radius, angle: placed.angle }
+    ? {
+        name: placed.name,
+        x: placed.x,
+        z: placed.z,
+        radius: placed.radius,
+        angle: placed.angle,
+      }
     : null;
   anchorCache.set(key, anchor);
   return anchor;

@@ -15,7 +15,7 @@ import {
 } from "../src/sim/airfields";
 import { Simulation } from "../src/sim/simulation";
 import { Terrain, rawTerrainHeightAt, terrainHeightAt } from "../src/sim/terrain";
-import { insideTownFootprint } from "../src/sim/towns";
+import { HOME_TOWN_NAME, insideTownFootprint } from "../src/sim/towns";
 import { buildAirfieldHoleMask } from "../src/render/terrainMesh";
 
 const terrain = new Terrain();
@@ -59,6 +59,7 @@ describe("town airfields", () => {
       expect(field.width).toBeLessThan(AIRFIELD.padWidth);
       expect(field.surface).toBe("grass");
       expect(field.tow).toBe(false);
+      expect(field.name.length).toBeGreaterThan(2);
     }
   });
 
@@ -192,7 +193,10 @@ describe("town airfields", () => {
     expect(takeoffHeading(field, 350)).toBe(270);
     expect(runwayNumbers(field)).toBe("09/27");
     expect(airfieldLabel(field)).toContain("09/27");
-    expect(airfieldLabel(HOME_AIRFIELD)).toBe("Home field");
+    expect(airfieldLabel(field)).toContain(field.name);
+    const homeLabel = airfieldLabel(HOME_AIRFIELD);
+    expect(homeLabel).toContain("Home field");
+    expect(homeLabel).toContain(HOME_TOWN_NAME);
   });
 
   it("launches a winch from a town strip into the wind", () => {

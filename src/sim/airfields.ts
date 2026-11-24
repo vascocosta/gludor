@@ -7,7 +7,7 @@ import {
   setAirfieldSurfaceSource,
   waterLevelAt,
 } from "./terrain";
-import { insideTownFootprint, townAnchorForCell } from "./towns";
+import { HOME_TOWN_NAME, insideTownFootprint, townAnchorForCell } from "./towns";
 
 /**
  * Town airfields. Real soaring country has a grass strip beside most
@@ -30,6 +30,8 @@ export type AirfieldSurface = "asphalt" | "grass";
 export interface AirfieldSpec {
   /** Stable key: "home" for the origin field, otherwise "i:j" of the town cell. */
   id: string;
+  /** Name of the town this strip belongs to (or the home town). */
+  name: string;
   x: number;
   z: number;
   /** Ground elevation at the middle of the graded pad. */
@@ -71,6 +73,7 @@ function constantProfile(length: number, height: number): number[] {
 /** The origin field, matching the hand-built runway in the renderer. */
 export const HOME_AIRFIELD: AirfieldSpec = {
   id: "home",
+  name: HOME_TOWN_NAME,
   x: 0,
   z: 0,
   elevation: WORLD.fieldElevation,
@@ -157,9 +160,8 @@ export function takeoffHeading(field: AirfieldSpec, windFrom: number): number {
 
 /** A rough label for menus and messages. */
 export function airfieldLabel(field: AirfieldSpec): string {
-  if (field.home) return "Home field";
-  const surface = field.surface === "asphalt" ? "asphalt" : "grass";
-  return `${runwayNumbers(field)} strip · ${Math.round(field.length)} m ${surface}`;
+  if (field.home) return `${field.name} · Home field`;
+  return `${field.name} · ${runwayNumbers(field)} · ${Math.round(field.length)} m`;
 }
 
 /** Height of the graded surface at a point along the runway axis. */
@@ -323,6 +325,7 @@ function planAtCell(i: number, j: number, config: WorldConfig): FieldPlan | null
           score,
           spec: {
             id: key,
+            name: town.name,
             x: cx,
             z: cz,
             elevation: site.elevation,

@@ -44,7 +44,7 @@ snow-capped peaks holding the last light.*
 - **Instruments.** IAS, altitude, total-energy vario, slip ball, G-load, trim,
   and a compact flight computer with the nearest thermal distance and bearing;
   inside a core it switches to a centering cue that turns green when you are
-  centred. A second cue below it lists the two nearest runways with their
+  centred. A second cue below it lists the two nearest named strips with their
   bearings, designators and lengths, so there is always a landing option in
   sight. The 3D
   cockpit panel carries live needles and digital readouts too.
@@ -157,13 +157,16 @@ instead of a garden.
 ## Town airfields
 
 About half the towns own a grass strip, and the menu lists home plus the
-nearest dozen within 30 km, labelled by runway designator, length and distance.
+nearest dozen within 30 km, named after their town and labelled by runway
+designator, length and distance.
 Pick one and launch by winch or air start; the runway end is chosen into the
 wind, so the winch is always ahead of you.
 
-Strips stream like everything else and are deterministic per town cell. A site
-is only used when the ground is dry, clear of the rivers and the town, and flat
-enough to grade. The runway follows the natural long profile of its hillside
+Strips stream like everything else and are deterministic per town cell. Each
+one carries its town's fictional name; the home strip is Brackenmoor. The same
+name appears in the departure picker and the landing cue. A site is only used
+when the ground is dry, clear of the rivers and the town, and flat enough to
+grade. The runway follows the natural long profile of its hillside
 but is levelled across its width, with a short blend back into the meadow, so
 the earthworks stay small. Threshold bars, a windsock and a small shed mark the
 field, and one dependable thermal sits a short glide away so a country launch
@@ -184,7 +187,7 @@ Open the printed URL (normally <http://localhost:5173>), pick a weather preset,
 a departure field and a launch, then press **Fly**.
 
 ```bash
-npm test        # 79 headless flight/aero/weather/streaming/lake/river/town/airfield/mountain/tow tests
+npm test        # 80 headless flight/aero/weather/streaming/lake/river/town/airfield/mountain/tow tests
 npm run typecheck
 npm run build   # static production build in dist/
 npm run preview # serve the production build locally
