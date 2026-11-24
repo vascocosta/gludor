@@ -101,10 +101,15 @@ export class TreeField {
     scene.add(this.group);
   }
 
+  /** True while a rebuild is still in progress. */
+  get isBuilding(): boolean {
+    return this.building;
+  }
+
   /** Rebuild the wood when the glider has moved, within a frame budget. */
   update(position: Vector3, budgetMs: number = 3): void {
     if (!this.building) {
-      if (Math.hypot(position.x - this.lastBuildX, position.z - this.lastBuildZ) < 750) return;
+      if (Math.hypot(position.x - this.lastBuildX, position.z - this.lastBuildZ) < 1500) return;
       this.startBuild(position.x, position.z);
     }
 

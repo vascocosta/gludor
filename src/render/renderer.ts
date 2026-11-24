@@ -407,8 +407,16 @@ export class WorldRenderer {
     // Everything procedural follows the viewer: terrain tiles, woodland,
     // clouds, thermal markers, and the shadow bake all use the same window.
     this.terrainStream.update(this.camera.position);
-    this.trees.update(this.camera.position, 3);
-    this.towns.update(this.camera.position, 3);
+    // Rebuilding both streamed fields in the same frame doubles the spike, so
+    // let one rebuild finish before starting the other.
+    if (this.towns.isBuilding) {
+      this.towns.update(this.camera.position, 2);
+    } else if (this.trees.isBuilding) {
+      this.trees.update(this.camera.position, 2);
+    } else {
+      this.towns.update(this.camera.position, 2);
+      if (!this.towns.isBuilding) this.trees.update(this.camera.position, 2);
+    }
     this.townAirfields.update(this.camera.position, sim.wind);
     this.water.update(this.camera.position, menu ? this.menuTime : sim.time);
     this.clouds.update(this.camera.position, sim.liftField, 2);

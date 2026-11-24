@@ -125,6 +125,11 @@ export class TownField {
     scene.add(this.group);
   }
 
+  /** True while a rebuild is still in progress. */
+  get isBuilding(): boolean {
+    return this.building;
+  }
+
   /** Rebuild the towns when the glider has moved, within a frame budget. */
   update(position: Vector3, budgetMs: number = 3): void {
     if (!this.building) {

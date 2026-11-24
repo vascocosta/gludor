@@ -344,7 +344,7 @@ export const LAKES = {
   margin: 2200,
   /** How far from the camera water is drawn. */
   renderRadius: 36000,
-  rebuildDistance: 1500,
+  rebuildDistance: 2500,
 } as const;
 
 /**
@@ -474,8 +474,8 @@ export const TOWNS = {
   /** Reject sites steeper than this (rise over run) at the centre and rim. */
   maxSlope: 0.18,
   /** How far from the camera buildings are drawn. */
-  renderRadius: 18000,
-  rebuildDistance: 2000,
+  renderRadius: 15000,
+  rebuildDistance: 4000,
   /** Windows are only generated this close, where they are actually visible. */
   windowRadius: 5000,
 } as const;
@@ -541,7 +541,7 @@ export const STREAMING = {
   farTileSize: 16000,
   farSpacing: 400,
   terrainBuildBudgetMs: 4,
-  treeRadius: 10000,
+  treeRadius: 8000,
   thermalCellSize: 2500,
   thermalRadius: 32000,
   cloudTileSize: 16000,
