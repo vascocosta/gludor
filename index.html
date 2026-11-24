@@ -45,7 +45,13 @@
                 <option value="tow">Aerotow · 1,200 m</option>
                 <option value="air">Air start · 650 m</option>
               </select>
-              <small class="hint">Winch or aerotow for a real launch. Air start skips the climb.</small>
+              <small id="launch-hint" class="hint">Winch or aerotow for a real launch. Air start skips the climb.</small>
+            </label>
+
+            <label class="field">
+              <span>Departure field</span>
+              <select id="departure"></select>
+              <small class="hint">Home or a nearby town grass strip.</small>
             </label>
 
             <div class="slider-block">
@@ -91,6 +97,7 @@
           <div class="eyebrow">First flight</div>
           <ol class="briefing">
             <li><b>Launch.</b> Take the winch or follow the tug; release with SPACE when the climb flattens.</li>
+            <li><b>Pick a field.</b> Home has the long asphalt runway. Nearby towns add short grass strips with winch or air starts; aerotow stays at home.</li>
             <li><b>Find lift.</b> Cumulus mark the thermals. Turn tightly, keep the slip ball centred, watch the vario, and follow the top-right arrow until it turns green.</li>
             <li><b>Read the ridge.</b> The long slope north of the field works when the wind blows onto it.</li>
             <li><b>Land.</b> Airbrakes are strong. Arrive high, fly a normal circuit, and touch down wings level. Use <kbd>Q</kbd>/<kbd>E</kbd> to steer the roll-out and <kbd>B</kbd> for the wheel brake; the summary opens when you stop.</li>

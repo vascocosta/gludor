@@ -19,6 +19,7 @@ import {
 import { STREAMING, WORLD } from "../config";
 import { clamp } from "../core/math";
 import { fbm2D, hash2, mulberry32 } from "../core/rng";
+import { insideAirfield } from "../sim/airfields";
 import type { Terrain } from "../sim/terrain";
 import { insideTown } from "../sim/towns";
 
@@ -181,6 +182,8 @@ export class TreeField {
     if (Math.hypot(x, z) < 500) return;
     // Towns are cleared ground: no trees through the roofs or the street.
     if (insideTown(x, z, 18)) return;
+    // A mown strip and its graded apron stay clear of trunks.
+    if (insideAirfield(x, z, 14)) return;
 
     const ground = this.terrain.heightAt(x, z);
     if (ground > 1000) return;
@@ -281,7 +284,7 @@ export class TreeField {
 }
 
 /** A muted, mown grass surface with lengthwise stripes. */
-function createGrassStripTexture(): CanvasTexture {
+export function createGrassStripTexture(): CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = 128;
   canvas.height = 128;

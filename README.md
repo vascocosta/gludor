@@ -20,8 +20,9 @@ snow-capped peaks holding the last light.*
   post-release push so the glider does not zoom. The aerotow puts a procedural
   tug on the runway ahead of you; it lifts off, climbs away, and turns gently
   over the field, towing you to 1,200 m AGL.
-- **An endless procedural world.** One airfield at the origin (400 m
+- **An endless procedural world.** One home airfield at the origin (400 m
   elevation) with a 2 km asphalt runway and a shorter parallel grass strip,
+  plus a grass strip beside roughly half the market towns you fly over,
   a chain of finite training ridges north and west of the field, snow-capped
   alpine ranges
   beyond 6 km, rolling farmland, clustered woodland, lakes scattered across the
@@ -60,7 +61,8 @@ VR, or mobile touch controls.
 ![The tug turning over the valley](docs/aerotow.jpg)
 
 Choose **Aerotow · 1,200 m** on the menu and a small high-wing tug is waiting
-at the far end of the rope. It accelerates down the runway first, lifts off at
+at the far end of the rope. Aerotow is flown from the home field only; the
+streamed town strips launch by winch or air start. It accelerates down the runway first, lifts off at
 27 m/s, and settles into a gentle left-hand climbing turn once it is 150 m above
 the field. The turn is wide — a 620 m radius — so the tow is a slow scenic
 spiral over the airfield rather than a steep departure.
@@ -149,6 +151,21 @@ instead of a garden.
 
 ![A town from the air](docs/town.jpg)
 
+## Town airfields
+
+About half the towns own a grass strip, and the menu lists home plus the
+nearest dozen within 30 km, labelled by runway designator, length and distance.
+Pick one and launch by winch or air start; the runway end is chosen into the
+wind, so the winch is always ahead of you.
+
+Strips stream like everything else and are deterministic per town cell. A site
+is only used when the ground is dry, clear of the rivers and the town, and flat
+enough to grade. The runway follows the natural long profile of its hillside
+but is levelled across its width, with a short blend back into the meadow, so
+the earthworks stay small. Threshold bars, a windsock and a small shed mark the
+field, and one dependable thermal sits a short glide away so a country launch
+is not followed by a long search for lift.
+
 ## Quick start
 
 Requires Node.js 20.19+ (or 22.12+) and a WebGL2-capable desktop browser.
@@ -158,11 +175,11 @@ npm install
 npm run dev
 ```
 
-Open the printed URL (normally <http://localhost:5173>), pick a weather preset
-and a launch, then press **Fly**.
+Open the printed URL (normally <http://localhost:5173>), pick a weather preset,
+a departure field and a launch, then press **Fly**.
 
 ```bash
-npm test        # 63 headless flight/aero/weather/streaming/lake/river/town/mountain/tow tests
+npm test        # 76 headless flight/aero/weather/streaming/lake/river/town/airfield/mountain/tow tests
 npm run typecheck
 npm run build   # static production build in dist/
 npm run preview # serve the production build locally
@@ -352,7 +369,11 @@ draw calls. Trees avoid open water and town footprints.
 
 Towns use a deterministic 6 km grid with a 3 km keep-out around the airfield,
 plus one fixed home town in the southwest that is exempt from the keep-out
-and always gets a church tower. A candidate is rejected if its centre or rim is
+and always gets a church tower. Town airfields are planned from the same grid:
+each cell's strip is a pure function of its seed, so a runway is identical
+however the world is streamed. Only about half the towns qualify, and a strip
+is rejected for water, a river corridor, a crowded neighbour, or ground that
+would need more than a few metres of cut and fill. A candidate is rejected if its centre or rim is
 too high, too steep, or lapped by a lake; neighbours that would overlap keep the
 lower-indexed cell, so the result never depends on query order. The placement and
 building data are pure simulation code, shared by the physics and the renderer,
@@ -363,7 +384,8 @@ hide slopes rather than flattening the terrain.
 
 Thermals come from a deterministic 2.5 km hash grid that is rebuilt around the
 glider every 2 km; the dependable home thermal at (620, −720) is always present
-near the field. Lake surfaces cool the boundary layer, so their cells start no
+near the field, and each town strip owns a guaranteed thermal a short glide
+away. Lake surfaces cool the boundary layer, so their cells start no
 thermals. Cores are deliberately wide — roughly 1.6–3 km across at their base,
 depending on the day — and flat-topped rather than sharply peaked, widen with
 height, and stay fixed under their cloud markers so the sky you aim at is the
@@ -403,19 +425,20 @@ src/
   sim/
     terrain.ts       analytic ground, mountains, lake and river carving, airfield flattening
     towns.ts         deterministic towns, footprints, roof queries
+    airfields.ts     deterministic town strips, runway profiles, grading, field picker
     atmosphere.ts    ISA density, wind shear, veer, turbulence
     lift.ts          thermal, ridge, and sink field
     aero.ts          lift/drag/moment coefficients
     towplane.ts      scripted aerotow tug: roll, climb, turn, release, departure
     simulation.ts    6DOF flight loop, winch and aerotow rope, ground/water/roof
                      contact, landing rollout, telemetry
-  render/            Three.js scene, terrain/water/river-bank/town/glider/cloud/sky meshes,
-                     and the procedural aerotow tug
+  render/            Three.js scene, terrain/water/river-bank/town/airfield/glider/cloud/sky
+                     meshes, and the procedural aerotow tug
   ui/                HUD instruments and menu/pause/summary wiring
   input/             keyboard state
   audio/             procedural WebAudio soundscape
-test/                aero, flight, weather, streaming, lake, river, town, mountain,
-                     aerotow, and landing-rollout tests
+test/                aero, flight, weather, streaming, lake, river, town, airfield,
+                     mountain, aerotow, and landing-rollout tests
 ```
 
 ## Tests
@@ -445,6 +468,10 @@ The headless suite exercises the model rather than the DOM:
 - Towns: deterministic layout, airfield exclusion, the fixed home town and its
   tower, dry workable plots, roof queries, believable density, and a fatal roof
   strike.
+- Airfields: deterministic streaming, sane counts and lengths, dry graded
+  profiles, home-plus-nearest ordering, inside-the-pad queries, wind-chosen
+  runway ends, satellite winch and air starts, home-only aerotow, and a
+  guaranteed thermal at every strip.
 - Mountains: determinism, the six-kilometre keep-out, finite hand-placed ridges,
   alpine peaks alongside ordinary foothills, plausible height bounds, and
   snow-line summits.

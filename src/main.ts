@@ -5,6 +5,7 @@ import { KeyboardInput } from "./input/keyboard";
 import { Hud, type HudState } from "./ui/hud";
 import { MenuUI } from "./ui/menu";
 import { WorldRenderer } from "./render/renderer";
+import { HOME_AIRFIELD, type AirfieldSpec } from "./sim/airfields";
 import { Simulation, type LaunchType } from "./sim/simulation";
 import { Terrain } from "./sim/terrain";
 
@@ -27,6 +28,7 @@ let thermalHelpers = true;
 let freeCamera = false;
 let lastWeather: WeatherSettings | null = null;
 let lastLaunch: LaunchType = "winch";
+let lastField: AirfieldSpec = HOME_AIRFIELD;
 let helpResumesFlight = false;
 let accumulator = 0;
 let landedTimer = 0;
@@ -37,7 +39,7 @@ let lastPointerY = 0;
 let fps = 60;
 
 const ui = new MenuUI({
-  onFly: (weather, launch) => startFlight(weather, launch),
+  onFly: (weather, launch, field) => startFlight(weather, launch, field),
   onResume: () => resumeFlight(),
   onRestart: () => restartFlight(),
   onMenu: () => showMenu(),
@@ -56,10 +58,16 @@ simulation.prepareMenu();
 renderer.setCameraMode("chase");
 ui.showMenu();
 
-function startFlight(weather: WeatherSettings, launch: LaunchType): void {
+function startFlight(
+  weather: WeatherSettings,
+  launch: LaunchType,
+  field: AirfieldSpec,
+): void {
   lastWeather = { ...weather };
-  lastLaunch = launch;
-  simulation.startFlight(weather, launch);
+  lastField = field;
+  simulation.startFlight(weather, launch, field);
+  // A town strip falls back to a winch, so remember what was actually flown.
+  lastLaunch = simulation.launch;
   renderer.syncWeather(simulation);
   renderer.setCameraMode("chase");
   renderer.resetLook();
@@ -137,7 +145,7 @@ function toggleFreeCamera(): void {
 
 function restartFlight(): void {
   if (!lastWeather) return;
-  startFlight(lastWeather, lastLaunch);
+  startFlight(lastWeather, lastLaunch, lastField);
 }
 
 function showMenu(): void {

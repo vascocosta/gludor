@@ -1,6 +1,6 @@
 import { RIVERS, TOWNS, WORLD, type WorldConfig } from "../config";
 import { hash2, mulberry32, type Rng } from "../core/rng";
-import { riverIntersectsCircle, terrainHeightAt, waterLevelAt } from "./terrain";
+import { rawTerrainHeightAt, riverIntersectsCircle, waterLevelAt } from "./terrain";
 
 /** Buildings are simple boxes with a gabled or pyramidal roof. */
 export type BuildingKind = "cottage" | "barn" | "tower" | "tenement";
@@ -82,8 +82,8 @@ const TOWN_FRONTAGE = 50 * BUILDING_SCALE;
 /** Slope in rise over run, sampled on a 40 m baseline. */
 function slopeAt(x: number, z: number, config: WorldConfig): number {
   const d = 40;
-  const gx = (terrainHeightAt(x + d, z, config) - terrainHeightAt(x - d, z, config)) / (2 * d);
-  const gz = (terrainHeightAt(x, z + d, config) - terrainHeightAt(x, z - d, config)) / (2 * d);
+  const gx = (rawTerrainHeightAt(x + d, z, config) - rawTerrainHeightAt(x - d, z, config)) / (2 * d);
+  const gz = (rawTerrainHeightAt(x, z + d, config) - rawTerrainHeightAt(x, z - d, config)) / (2 * d);
   return Math.hypot(gx, gz);
 }
 
@@ -105,7 +105,16 @@ function townBase(i: number, j: number, config: WorldConfig): TownBase | null {
   };
 }
 
-function makeTown(i: number, j: number, config: WorldConfig): Town | null {
+/** Position and size of a town, before any buildings are laid out. */
+export interface TownAnchor {
+  x: number;
+  z: number;
+  radius: number;
+  angle: number;
+  home?: boolean;
+}
+
+function placeTown(i: number, j: number, config: WorldConfig): TownBase | null {
   const base = townBase(i, j, config);
   if (!base) return null;
 
@@ -140,7 +149,7 @@ function makeTown(i: number, j: number, config: WorldConfig): Town | null {
     }
   }
 
-  if (terrainHeightAt(base.x, base.z, config) > TOWN_MAX_HEIGHT) return null;
+  if (rawTerrainHeightAt(base.x, base.z, config) > TOWN_MAX_HEIGHT) return null;
   if (slopeAt(base.x, base.z, config) > TOWN_MAX_SLOPE) return null;
 
   // Check the rim too: a town square needs a workable plot, and the whole
@@ -150,12 +159,17 @@ function makeTown(i: number, j: number, config: WorldConfig): Town | null {
     const px = base.x + Math.cos(theta) * base.radius * 0.8;
     const pz = base.z + Math.sin(theta) * base.radius * 0.8;
     if (slopeAt(px, pz, config) > TOWN_MAX_SLOPE) return null;
-    const ground = terrainHeightAt(px, pz, config);
+    const ground = rawTerrainHeightAt(px, pz, config);
     const water = waterLevelAt(px, pz, config);
     if (water !== null && water > ground - 2) return null;
   }
 
-  return layoutTown(base, config);
+  return base;
+}
+
+function makeTown(i: number, j: number, config: WorldConfig): Town | null {
+  const base = placeTown(i, j, config);
+  return base ? layoutTown(base, config) : null;
 }
 
 /** Local (x, z) to world, for a rotation of `yaw` about Y. */
@@ -267,7 +281,7 @@ function tryAddBuilding(
     [0, 0],
   ]) {
     const p = toWorld(x, z, yaw, ox * width, oz * depth);
-    const height = terrainHeightAt(p.x, p.z, config);
+    const height = rawTerrainHeightAt(p.x, p.z, config);
     if (height < ground) ground = height;
     if (height > highest) highest = height;
 
@@ -435,6 +449,62 @@ function townAtCell(i: number, j: number, config: WorldConfig): Town | null {
   if (townCache.size > 4096) townCache.clear();
   townCache.set(key, town);
   return town;
+}
+
+const anchorCache = new Map<string, TownAnchor | null>();
+let anchorCacheSeed = Number.NaN;
+
+function anchorAtCell(i: number, j: number, config: WorldConfig): TownAnchor | null {
+  if (anchorCacheSeed !== config.seed) {
+    anchorCache.clear();
+    anchorCacheSeed = config.seed;
+  }
+  const key = `${i}:${j}`;
+  const cached = anchorCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const placed = placeTown(i, j, config);
+  const anchor = placed
+    ? { x: placed.x, z: placed.z, radius: placed.radius, angle: placed.angle }
+    : null;
+  anchorCache.set(key, anchor);
+  return anchor;
+}
+
+/**
+ * A town's centre and footprint, without generating its buildings. Airfields
+ * only need the settlement's extent, and laying out a whole town just to test
+ * a runway site is far too expensive when the world is streamed.
+ */
+export function townAnchorForCell(
+  i: number,
+  j: number,
+  config: WorldConfig = WORLD,
+): TownAnchor | null {
+  return anchorAtCell(i, j, config);
+}
+
+/** True inside a town's footprint (or a margin around it), without buildings. */
+export function insideTownFootprint(
+  x: number,
+  z: number,
+  margin = 0,
+  config: WorldConfig = WORLD,
+): boolean {
+  const home = TOWNS.home;
+  if (Math.hypot(x - home.x, z - home.z) < home.radius + margin) return true;
+
+  const cell = TOWN_CELL;
+  const cellI = Math.floor(x / cell);
+  const cellJ = Math.floor(z / cell);
+  for (let dj = -1; dj <= 1; dj++) {
+    for (let di = -1; di <= 1; di++) {
+      const anchor = anchorAtCell(cellI + di, cellJ + dj, config);
+      if (!anchor) continue;
+      if (Math.hypot(x - anchor.x, z - anchor.z) < anchor.radius + margin) return true;
+    }
+  }
+  return false;
 }
 
 /** Visit every town whose footprint overlaps the given rectangle. */
