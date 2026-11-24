@@ -162,7 +162,11 @@ export class WorldRenderer {
     this.towns = new TownField(terrain, this.scene);
     this.cloudShadows.applyToObject(this.towns.group);
     this.towns.update(this.camera.position, 500);
-    this.townAirfields = new AirfieldField(this.scene, this.cloudShadows);
+    this.townAirfields = new AirfieldField(
+      this.scene,
+      this.cloudShadows,
+      this.terrainStream.material,
+    );
     this.airfield = new Airfield(terrain);
     this.cloudShadows.applyToObject(this.airfield.group);
     this.scene.add(this.airfield.group);

@@ -2,6 +2,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   BoxGeometry,
+  Color,
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
@@ -11,22 +12,43 @@ import {
   Vector3,
   type Object3D,
 } from "three";
-import { DEG } from "../core/math";
+import { WORLD } from "../config";
+import { DEG, lerp, smoothstep } from "../core/math";
 import {
   AIRFIELD,
-  airfieldHeightAt,
   forEachAirfieldInBounds,
   type AirfieldSpec,
 } from "../sim/airfields";
+import { terrainHeightAt } from "../sim/terrain";
 import type { CloudShadows } from "./cloudShadows";
 import { createGrassStripTexture } from "./props";
+import { terrainColorAt } from "./terrainMesh";
 
 /** Strips are small and sparse; a 20 km window is generous and cheap. */
 const VIEW_RADIUS = 20_000;
 const REBUILD_DISTANCE = 2_000;
-/** Grass laid just above the graded pad, clear of the terrain triangles. */
-const STRIP_OFFSET = 0.3;
-const MARKING_OFFSET = 0.38;
+/**
+ * The near terrain tier is cut out under each pad. Its quads are 50 m, so the
+ * hole can reach roughly 146 m past the pad; this patch overlaps it by another
+ * ~44 m and follows the analytic surface, matching the surrounding ground.
+ */
+const PAD_MARGIN = 190;
+/** Patch sampling. Even across-steps keep a grid line on the runway centre. */
+const PAD_SAMPLE = 24;
+const PAD_LIFT = 0.04;
+/** Mown ribbon and markings laid just above the exact pad patch. */
+const STRIP_OFFSET = 0.08;
+const MARKING_OFFSET = 0.12;
+/** A faint mown tint on the graded shoulders, blended out into the meadow. */
+const MOWN = new Color(0x68854a);
+
+interface PadSurface {
+  mesh: Mesh;
+  /** Along-runway coordinates of the patch grid. */
+  alongs: number[];
+  /** Patch height, including its lift, at an along-runway coordinate. */
+  heightAt(along: number): number;
+}
 
 /**
  * Streamed grass strips beside towns. Each field is a small group: a mown
@@ -39,6 +61,7 @@ export class AirfieldField {
 
   private readonly fields = new Map<string, Group>();
   private readonly socks = new Map<string, Group>();
+  private readonly terrainMaterial: MeshStandardMaterial;
   private readonly stripMaterial: MeshStandardMaterial;
   private readonly markingMaterial: MeshStandardMaterial;
   private readonly poleMaterial: MeshStandardMaterial;
@@ -49,7 +72,12 @@ export class AirfieldField {
   private lastX = Number.POSITIVE_INFINITY;
   private lastZ = Number.POSITIVE_INFINITY;
 
-  constructor(scene: Object3D, cloudShadows: CloudShadows) {
+  constructor(
+    scene: Object3D,
+    cloudShadows: CloudShadows,
+    terrainMaterial: MeshStandardMaterial,
+  ) {
+    this.terrainMaterial = terrainMaterial;
     this.stripMaterial = new MeshStandardMaterial({
       map: createGrassStripTexture(),
       roughness: 1,
@@ -130,6 +158,124 @@ export class AirfieldField {
     }
   }
 
+  /**
+   * The ground under the strip. The near terrain tier is cut away around every
+   * pad and this mesh fills the hole. Its along-runway grid includes every
+   * profile kink, so the runway is reproduced exactly; the coarse terrain can
+   * no longer bridge the pad and poke through the mown ribbon.
+   */
+  private buildPad(field: AirfieldSpec): PadSurface {
+    const heading = field.heading * DEG;
+    const fx = Math.sin(heading);
+    const fz = -Math.cos(heading);
+    const rx = Math.cos(heading);
+    const rz = Math.sin(heading);
+    const halfWidth = AIRFIELD.padWidth / 2 + PAD_MARGIN;
+    const halfLength = field.length / 2 + AIRFIELD.padExtension + PAD_MARGIN;
+
+    let acrossCells = Math.ceil((halfWidth * 2) / PAD_SAMPLE);
+    if (acrossCells % 2 !== 0) acrossCells++;
+    const acrossStep = (halfWidth * 2) / acrossCells;
+    const row = acrossCells + 1;
+
+    // Coarse samples fill the apron; the profile's own knots are added so the
+    // runway (which lies inside the profile) is reproduced exactly.
+    const alongSet = new Set<number>();
+    const coarseAlong = Math.max(1, Math.ceil((halfLength * 2) / PAD_SAMPLE));
+    for (let j = 0; j <= coarseAlong; j++) {
+      alongSet.add(-halfLength + (j / coarseAlong) * halfLength * 2);
+    }
+    for (let k = 0; k < field.profile.length; k++) {
+      const along = field.profileStart + k * field.profileStep;
+      if (along > -halfLength + 0.5 && along < halfLength - 0.5) alongSet.add(along);
+    }
+    const alongs = [...alongSet].sort((a, b) => a - b);
+    const alongCells = alongs.length - 1;
+
+    // A tiny per-field lift keeps overlapping pads from sharing a depth plane.
+    const lift =
+      PAD_LIFT + (Math.sin(field.x * 0.00043 + field.z * 0.00071) * 0.5 + 0.5) * 0.03;
+
+    const positions = new Float32Array(alongs.length * row * 3);
+    let p = 0;
+    for (let j = 0; j < alongs.length; j++) {
+      const along = alongs[j];
+      for (let i = 0; i <= acrossCells; i++) {
+        const across = -halfWidth + i * acrossStep;
+        const x = field.x + fx * along + rx * across;
+        const z = field.z + fz * along + rz * across;
+        positions[p++] = x;
+        positions[p++] = terrainHeightAt(x, z, WORLD) + lift;
+        positions[p++] = z;
+      }
+    }
+
+    const indices: number[] = [];
+    for (let j = 0; j < alongCells; j++) {
+      for (let i = 0; i < acrossCells; i++) {
+        const a = j * row + i;
+        const b = a + 1;
+        const c = a + row;
+        const d = c + 1;
+        indices.push(a, b, c, b, d, c);
+      }
+    }
+
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    const normals = geometry.getAttribute("normal");
+    const colors = new Float32Array(positions.length);
+    for (let v = 0; v < positions.length / 3; v++) {
+      const i = v % row;
+      const j = (v - i) / row;
+      const along = alongs[j];
+      const across = -halfWidth + i * acrossStep;
+      const x = positions[v * 3];
+      const y = positions[v * 3 + 1];
+      const z = positions[v * 3 + 2];
+      const color = terrainColorAt(x, z, y, 1 - normals.getY(v), WORLD.seed);
+      const outside = Math.max(
+        Math.abs(along) - (field.length / 2 + AIRFIELD.padExtension),
+        Math.abs(across) - AIRFIELD.padWidth / 2,
+      );
+      color.lerp(MOWN, (1 - smoothstep(0, 18, outside)) * 0.22);
+      colors[v * 3] = color.r;
+      colors[v * 3 + 1] = color.g;
+      colors[v * 3 + 2] = color.b;
+    }
+    geometry.setAttribute("color", new BufferAttribute(colors, 3));
+
+    const pad = new Mesh(geometry, this.terrainMaterial);
+    pad.name = "airfield-pad";
+    pad.receiveShadow = true;
+    pad.castShadow = false;
+
+    // The centre column is the runway surface; both the ribbon and the props
+    // ride on this, so the pad can never cross them.
+    const centre = new Float32Array(alongs.length);
+    const middle = acrossCells / 2;
+    for (let j = 0; j < alongs.length; j++) {
+      centre[j] = positions[(j * row + middle) * 3 + 1];
+    }
+    const heightAt = (along: number): number => {
+      if (along <= alongs[0]) return centre[0];
+      if (along >= alongs[alongs.length - 1]) return centre[centre.length - 1];
+      let lo = 0;
+      let hi = alongs.length - 1;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (alongs[mid] <= along) lo = mid;
+        else hi = mid;
+      }
+      return lerp(centre[lo], centre[hi], (along - alongs[lo]) / (alongs[hi] - alongs[lo]));
+    };
+
+    return { mesh: pad, alongs, heightAt };
+  }
+
   private buildField(field: AirfieldSpec): Group {
     const group = new Group();
     const along = field.length;
@@ -139,21 +285,31 @@ export class AirfieldField {
     const rx = Math.cos(heading);
     const rz = Math.sin(heading);
 
-    // Mown ribbon, sampled along the graded profile. A short overrun at each
-    // end keeps the edge off the threshold bars.
+    // The high-resolution pad fills the hole cut in the near terrain tier.
+    const pad = this.buildPad(field);
+    group.add(pad.mesh);
+
+    // Mown ribbon, sampled on the pad's own along grid so the two surfaces are
+    // separated by a constant small lift. A short overrun at each end keeps the
+    // edge off the threshold bars.
     const start = -along / 2 - 8;
     const end = along / 2 + 8;
-    const steps = Math.max(8, Math.ceil((end - start) / 18));
+    const samples = [
+      start,
+      ...pad.alongs.filter((a) => a > start + 0.01 && a < end - 0.01),
+      end,
+    ];
+    const steps = samples.length - 1;
     const positions: number[] = [];
     const uvs: number[] = [];
     const indices: number[] = [];
     const halfWidth = field.width / 2;
 
-    for (let k = 0; k <= steps; k++) {
-      const s = start + ((end - start) * k) / steps;
+    for (let k = 0; k < samples.length; k++) {
+      const s = samples[k];
       const x = field.x + fx * s;
       const z = field.z + fz * s;
-      const y = airfieldHeightAt(field, s) + STRIP_OFFSET;
+      const y = pad.heightAt(s) + STRIP_OFFSET;
       positions.push(x - rx * halfWidth, y, z - rz * halfWidth);
       positions.push(x + rx * halfWidth, y, z + rz * halfWidth);
       const v = k / steps;
@@ -181,7 +337,6 @@ export class AirfieldField {
     const barIndices: number[] = [];
     for (const endSign of [-1, 1]) {
       const s = endSign * (along / 2 - 12);
-      const barY = airfieldHeightAt(field, s) + MARKING_OFFSET;
       for (let i = 0; i < 5; i++) {
         const across = -8 + i * 4;
         const cx = field.x + fx * s + rx * across;
@@ -193,6 +348,7 @@ export class AirfieldField {
           [1.05, -5],
           [-1.05, -5],
         ]) {
+          const barY = pad.heightAt(s + dv) + MARKING_OFFSET;
           barPositions.push(cx + rx * du + fx * dv, barY, cz + rz * du + fz * dv);
         }
         barIndices.push(base, base + 2, base + 1, base, base + 3, base + 2);
@@ -214,7 +370,7 @@ export class AirfieldField {
     const shedAcross = AIRFIELD.padWidth / 2 - 9;
     const shedX = field.x + fx * shedAlong + rx * shedAcross;
     const shedZ = field.z + fz * shedAlong + rz * shedAcross;
-    const shedY = airfieldHeightAt(field, shedAlong);
+    const shedY = pad.heightAt(shedAlong);
     const shed = new Mesh(new BoxGeometry(8, 3.2, 5.5), this.shedMaterial);
     shed.rotation.y = heading;
     shed.position.set(shedX, shedY + 1.6, shedZ);
@@ -232,7 +388,7 @@ export class AirfieldField {
     const poleAcross = -AIRFIELD.padWidth / 2 + 9;
     const poleX = field.x + fx * poleAlong + rx * poleAcross;
     const poleZ = field.z + fz * poleAlong + rz * poleAcross;
-    const poleY = airfieldHeightAt(field, poleAlong);
+    const poleY = pad.heightAt(poleAlong);
     const pole = new Mesh(new CylinderGeometry(0.11, 0.14, 6, 8), this.poleMaterial);
     pole.position.set(poleX, poleY + 3, poleZ);
     group.add(pole);

@@ -15,6 +15,12 @@ import {
 import { RIVERS, STREAMING, WORLD } from "../config";
 import { smoothstep } from "../core/math";
 import { fbm2D, hash2, periodicFbm2D, valueNoise2D } from "../core/rng";
+import {
+  AIRFIELD,
+  forEachAirfieldInBounds,
+  insideAirfieldPad,
+  type AirfieldSpec,
+} from "../sim/airfields";
 import { terrainHeightAt, forEachRiverInBounds } from "../sim/terrain";
 import type { CloudShadows } from "./cloudShadows";
 
@@ -152,6 +158,58 @@ export function terrainColorAt(
   colorScratch.offsetHSL(mottle * 0.012, mottle * 0.02, mottle * 0.05);
 
   return colorScratch;
+}
+
+/**
+ * Cut the near terrain away under every town strip, so no coarse triangle can
+ * cross the graded pad and poke through the runway. One quad is cut when any
+ * of its vertices falls inside the apron dilated by `spacing * 1.5`; the
+ * covering radius of a `spacing`-sized quad is `spacing * √2`, so every quad
+ * that could touch the pad is guaranteed to be removed. The high-resolution
+ * pad mesh streamed by `AirfieldField` fills the hole.
+ *
+ * Only the near tier should call this: its tiles always lie inside the
+ * airfield streaming radius, and the finer pad mesh is guaranteed to exist.
+ * Coarser tiers sit below the strip or are too distant to matter.
+ */
+export function buildAirfieldHoleMask(
+  x0: number,
+  z0: number,
+  cells: number,
+  spacing: number,
+): Uint8Array | null {
+  const size = cells * spacing;
+  const fields: AirfieldSpec[] = [];
+  forEachAirfieldInBounds(x0, z0, x0 + size, z0 + size, (field) => fields.push(field));
+  if (fields.length === 0) return null;
+
+  const margin = spacing * 1.5;
+  const centerX = x0 + size / 2;
+  const centerZ = z0 + size / 2;
+  const tileReach = Math.hypot(size, size) / 2;
+  const nearby = fields.filter(
+    (field) =>
+      Math.hypot(field.x - centerX, field.z - centerZ) <=
+      field.length / 2 + AIRFIELD.padExtension + margin + tileReach,
+  );
+  if (nearby.length === 0) return null;
+
+  const holes = new Uint8Array((cells + 1) * (cells + 1));
+  const row = cells + 1;
+  let any = false;
+  for (let j = 0; j <= cells; j++) {
+    const z = z0 + j * spacing;
+    for (let i = 0; i <= cells; i++) {
+      const x = x0 + i * spacing;
+      for (const field of nearby) {
+        if (!insideAirfieldPad(field, x, z, margin)) continue;
+        holes[j * row + i] = 1;
+        any = true;
+        break;
+      }
+    }
+  }
+  return any ? holes : null;
 }
 
 /**
@@ -340,6 +398,12 @@ export class TerrainStreamer {
       return holes;
     })();
 
+    // The finest tier is cut away under each town strip and filled by the
+    // high-resolution pad mesh. Coarser tiers sit below the strip, so they can
+    // stay solid; leaving them intact also hides the cut edges.
+    const airfieldHoles =
+      spec.tier === 0 ? buildAirfieldHoleMask(x0, z0, cells, spacing) : null;
+
     let offset = 0;
     for (let j = 0; j <= cells; j++) {
       for (let i = 0; i <= cells; i++) {
@@ -387,6 +451,13 @@ export class TerrainStreamer {
         if (
           riverHoles &&
           (riverHoles[i0] || riverHoles[i1] || riverHoles[i2] || riverHoles[i3])
+        ) {
+          continue;
+        }
+
+        if (
+          airfieldHoles &&
+          (airfieldHoles[i0] || airfieldHoles[i1] || airfieldHoles[i2] || airfieldHoles[i3])
         ) {
           continue;
         }

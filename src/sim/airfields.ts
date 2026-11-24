@@ -536,29 +536,35 @@ export function nearestAirfields(
   return fields.slice(0, Math.max(1, count));
 }
 
-/** True on a graded apron, used to keep trees off the runway and its skirt. */
+/** True on a field's graded apron, optionally dilated by a margin in metres. */
+export function insideAirfieldPad(
+  field: AirfieldSpec,
+  x: number,
+  z: number,
+  margin = 0,
+): boolean {
+  const h = (field.heading * Math.PI) / 180;
+  const dx = x - field.x;
+  const dz = z - field.z;
+  const along = dx * Math.sin(h) - dz * Math.cos(h);
+  const across = dx * Math.cos(h) + dz * Math.sin(h);
+  return (
+    Math.abs(along) <= field.length / 2 + AIRFIELD.padExtension + margin &&
+    Math.abs(across) <= AIRFIELD.padWidth / 2 + margin
+  );
+}
+
+/** True on any graded apron, used to keep trees off the runway and its skirt. */
 export function insideAirfield(
   x: number,
   z: number,
   margin = 0,
   config: WorldConfig = WORLD,
 ): boolean {
-  const onFootprint = (field: AirfieldSpec): boolean => {
-    const h = (field.heading * Math.PI) / 180;
-    const dx = x - field.x;
-    const dz = z - field.z;
-    const along = dx * Math.sin(h) - dz * Math.cos(h);
-    const across = dx * Math.cos(h) + dz * Math.sin(h);
-    return (
-      Math.abs(along) <= field.length / 2 + AIRFIELD.padExtension + margin &&
-      Math.abs(across) <= AIRFIELD.padWidth / 2 + margin
-    );
-  };
-
-  if (onFootprint(HOME_AIRFIELD)) return true;
+  if (insideAirfieldPad(HOME_AIRFIELD, x, z, margin)) return true;
 
   for (const field of fieldsNearGround(x, z, config)) {
-    if (onFootprint(field)) return true;
+    if (insideAirfieldPad(field, x, z, margin)) return true;
   }
   return false;
 }

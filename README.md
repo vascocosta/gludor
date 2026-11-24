@@ -164,7 +164,9 @@ enough to grade. The runway follows the natural long profile of its hillside
 but is levelled across its width, with a short blend back into the meadow, so
 the earthworks stay small. Threshold bars, a windsock and a small shed mark the
 field, and one dependable thermal sits a short glide away so a country launch
-is not followed by a long search for lift.
+is not followed by a long search for lift. The finest terrain tier is cut away
+under each pad and replaced with a high-resolution surface, so the 50 m ground
+mesh cannot bridge the strip and poke through the runway.
 
 ## Quick start
 
@@ -179,7 +181,7 @@ Open the printed URL (normally <http://localhost:5173>), pick a weather preset,
 a departure field and a launch, then press **Fly**.
 
 ```bash
-npm test        # 76 headless flight/aero/weather/streaming/lake/river/town/airfield/mountain/tow tests
+npm test        # 77 headless flight/aero/weather/streaming/lake/river/town/airfield/mountain/tow tests
 npm run typecheck
 npm run build   # static production build in dist/
 npm run preview # serve the production build locally

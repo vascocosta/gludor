@@ -15,6 +15,7 @@ import {
 import { Simulation } from "../src/sim/simulation";
 import { Terrain, rawTerrainHeightAt, terrainHeightAt } from "../src/sim/terrain";
 import { insideTownFootprint } from "../src/sim/towns";
+import { buildAirfieldHoleMask } from "../src/render/terrainMesh";
 
 const terrain = new Terrain();
 
@@ -130,6 +131,41 @@ describe("town airfields", () => {
         field.z + Math.sin(h) * across,
       ),
     ).toBe(false);
+  });
+
+  it("cuts every near-terrain quad that crosses a strip", () => {
+    const spacing = 50;
+    const cells = 80;
+    const row = cells + 1;
+
+    // The finest terrain tier must have no triangle left under any runway.
+    for (const field of nearby.slice(0, 8)) {
+      const x0 = field.x - 2_000;
+      const z0 = field.z - 2_000;
+      const mask = buildAirfieldHoleMask(x0, z0, cells, spacing);
+      expect(mask).not.toBeNull();
+
+      const h = (field.heading * Math.PI) / 180;
+      const fx = Math.sin(h);
+      const fz = -Math.cos(h);
+      const rx = Math.cos(h);
+      const rz = Math.sin(h);
+
+      for (let along = -field.length / 2; along <= field.length / 2; along += 11) {
+        for (let across = -field.width / 2; across <= field.width / 2; across += 5) {
+          const x = field.x + fx * along + rx * across;
+          const z = field.z + fz * along + rz * across;
+          const i = Math.floor((x - x0) / spacing);
+          const j = Math.floor((z - z0) / spacing);
+          const cut =
+            mask![j * row + i] ||
+            mask![j * row + i + 1] ||
+            mask![(j + 1) * row + i] ||
+            mask![(j + 1) * row + i + 1];
+          expect(cut, `${field.id} at ${along}, ${across}`).toBe(1);
+        }
+      }
+    }
   });
 
   it("picks the runway end into the wind and labels it", () => {
