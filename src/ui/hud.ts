@@ -1,4 +1,5 @@
 import { clamp, wrapDegrees } from "../core/math";
+import { runwayNumbers } from "../sim/airfields";
 import type { Simulation } from "../sim/simulation";
 
 export type HudState = "menu" | "flying" | "paused" | "ended" | "free";
@@ -74,6 +75,7 @@ export class Hud {
     if (state === "flying" || state === "paused") this.drawFlareCue(sim, cockpitView);
     this.drawMessage(sim);
     if (thermalHelpers && !sim.onGround) this.drawThermalHelper(sim);
+    if (!sim.onGround) this.drawAirfieldHelper(sim);
     if (sim.stall > 0.22) this.drawStall(sim);
     if (debug) this.drawDebug(sim, fps);
   }
@@ -540,6 +542,45 @@ export class Hud {
     ctx.fillText(centered ? "CORE" : inside ? "thermal core" : "nearest thermal", x - 6, y + 24);
   }
 
+  private drawAirfieldHelper(sim: Simulation): void {
+    const info = sim.getNearestAirfieldInfo();
+    if (!info) return;
+    const ctx = this.ctx;
+    const x = this.width - 108;
+    const y = 116;
+    this.roundRect(x - 16, y - 24, 104, 76, 10, "rgba(8,13,17,0.66)", BORDER);
+
+    ctx.save();
+    ctx.translate(x + 20, y + 8);
+    ctx.rotate(wrapDegrees(info.bearing - sim.heading) * (Math.PI / 180));
+    ctx.fillStyle = CYAN;
+    ctx.beginPath();
+    ctx.moveTo(0, -12);
+    ctx.lineTo(5, 2);
+    ctx.lineTo(0, -1);
+    ctx.lineTo(-5, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.font = "600 11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillStyle = "#cfe2e7";
+    ctx.fillText(this.formatDistance(info.distance), x + 34, y + 2);
+
+    ctx.fillStyle = "rgba(160,190,198,0.8)";
+    ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillText("nearest field", x - 6, y + 24);
+
+    ctx.fillStyle = "rgba(143, 227, 242, 0.75)";
+    ctx.fillText(
+      `${info.field.home ? "HOME" : runwayNumbers(info.field)} · ${Math.round(info.field.length)} m`,
+      x - 6,
+      y + 40,
+    );
+  }
+
   private drawMessage(sim: Simulation): void {
     const message = sim.getMessage();
     if (!message) return;
@@ -659,5 +700,11 @@ export class Hud {
     const m = Math.floor(total / 60);
     const s = total % 60;
     return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
+  private formatDistance(distance: number): string {
+    return distance < 1_000
+      ? `${Math.round(distance)} m`
+      : `${(distance / 1_000).toFixed(1)} km`;
   }
 }

@@ -311,7 +311,9 @@ export class LiftField {
       const dz = position.z - thermal.z;
       const distance = Math.hypot(dx, dz);
 
-      const bearing = (Math.atan2(dx, -dz) * 180) / Math.PI;
+      // Bearing from the glider to the thermal, so the HUD arrow points at it.
+      const bearing =
+        (Math.atan2(thermal.x - position.x, -(thermal.z - position.z)) * 180) / Math.PI;
       const score = distance - thermal.strength * 40;
       if (score < bestScore) {
         bestScore = score;

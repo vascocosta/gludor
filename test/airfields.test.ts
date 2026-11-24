@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_WEATHER, WORLD } from "../src/config";
+import { wrapDegrees } from "../src/core/math";
 import {
   AIRFIELD,
   HOME_AIRFIELD,
@@ -116,6 +117,21 @@ describe("town airfields", () => {
       expect(distances[i]).toBeGreaterThanOrEqual(distances[i - 1]);
     }
     expect(new Set(list.map((f) => f.id)).size).toBe(list.length);
+  });
+
+  it("points at the nearest field from the air", () => {
+    const field = nearestAirfields(0, 0, 4, 30_000)[1];
+    const sim = new Simulation(terrain, stillAir);
+    sim.startFlight(stillAir, "air", field);
+
+    // Overfly a point one kilometre east of the strip; it is due west.
+    sim.position.set(field.x + 1_000, field.elevation + 500, field.z);
+    sim.time = 2;
+    const info = sim.getNearestAirfieldInfo();
+    expect(info).not.toBeNull();
+    expect(info!.field.id).toBe(field.id);
+    expect(info!.distance).toBeCloseTo(1_000, 6);
+    expect(wrapDegrees(info!.bearing)).toBeCloseTo(270, 6);
   });
 
   it("recognises the graded footprint and nothing beside it", () => {

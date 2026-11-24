@@ -22,7 +22,12 @@ import {
   type WeatherSettings,
 } from "../config";
 import { AeroResult, ControlSurfaces, computeAero } from "./aero";
-import { HOME_AIRFIELD, takeoffHeading, type AirfieldSpec } from "./airfields";
+import {
+  HOME_AIRFIELD,
+  forEachAirfieldInBounds,
+  takeoffHeading,
+  type AirfieldSpec,
+} from "./airfields";
 import { Atmosphere } from "./atmosphere";
 import { LiftField, LiftSample } from "./lift";
 import type { Terrain } from "./terrain";
@@ -58,7 +63,16 @@ export interface FlightStats {
   launch: LaunchType;
 }
 
+export interface NearestAirfieldInfo {
+  field: AirfieldSpec;
+  distance: number;
+  /** Bearing from the glider to the field, in degrees. */
+  bearing: number;
+}
+
 const CLEARANCE = 0.9;
+/** How far the landing helper looks for a strip; matches the rendered window. */
+const AIRFIELD_HELPER_RADIUS = 20_000;
 /** Winch power at the cable, in watts. */
 const WINCH_POWER = 85_000;
 /** Height above the field where the winch stops pulling. */
@@ -127,6 +141,12 @@ export class Simulation {
   private messageText = "";
   private messageUntil = 0;
   private seed: number;
+  private nearestAirfieldCache: {
+    second: number;
+    x: number;
+    z: number;
+    info: NearestAirfieldInfo | null;
+  } | null = null;
 
   stats: FlightStats = {
     airTime: 0,
@@ -196,6 +216,7 @@ export class Simulation {
   ): void {
     this.rebuildWeather(weather);
     this.field = field;
+    this.nearestAirfieldCache = null;
     // Aerotow needs the home runway: the tug runs an axis-aligned profile and
     // the terrain around the origin is the only place it is guaranteed clear.
     const coercedTow = launch === "tow" && !field.home;
@@ -889,6 +910,56 @@ export class Simulation {
         this.showMessage(`Aerotow release at ${Math.round(agl)} m - find the first thermal`, 5);
       }
     }
+  }
+
+  /**
+   * The closest strip within the helper's search radius, if any. The result is
+   * cached for a second of flight time so the HUD can call this every frame
+   * without walking the airfield grid each time.
+   */
+  getNearestAirfieldInfo(): NearestAirfieldInfo | null {
+    const x = this.position.x;
+    const z = this.position.z;
+    const second = Math.floor(this.time);
+    const cached = this.nearestAirfieldCache;
+    if (
+      cached &&
+      cached.second === second &&
+      Math.hypot(x - cached.x, z - cached.z) < 200
+    ) {
+      return cached.info;
+    }
+
+    const nearest: { field: AirfieldSpec | null; distance: number } = {
+      field: null,
+      distance: Infinity,
+    };
+    const consider = (field: AirfieldSpec): void => {
+      const distance = Math.hypot(field.x - x, field.z - z);
+      if (distance > AIRFIELD_HELPER_RADIUS || distance >= nearest.distance) return;
+      nearest.field = field;
+      nearest.distance = distance;
+    };
+
+    consider(HOME_AIRFIELD);
+    forEachAirfieldInBounds(
+      x - AIRFIELD_HELPER_RADIUS,
+      z - AIRFIELD_HELPER_RADIUS,
+      x + AIRFIELD_HELPER_RADIUS,
+      z + AIRFIELD_HELPER_RADIUS,
+      consider,
+    );
+
+    const field = nearest.field;
+    const info: NearestAirfieldInfo | null = field
+      ? {
+          field,
+          distance: nearest.distance,
+          bearing: (Math.atan2(field.x - x, -(field.z - z)) * 180) / Math.PI,
+        }
+      : null;
+    this.nearestAirfieldCache = { second, x, z, info };
+    return info;
   }
 
   getNearestThermalInfo(): {
