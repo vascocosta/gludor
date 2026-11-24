@@ -23,6 +23,7 @@ import type { Simulation } from "../sim/simulation";
 import type { Terrain } from "../sim/terrain";
 import { buildingHeightAt } from "../sim/towns";
 import { Airfield, createBackdrop, TreeField } from "./props";
+import { AirfieldField } from "./airfields";
 import { CloudField } from "./clouds";
 import { CloudShadows } from "./cloudShadows";
 import { GliderMesh, GLIDER_MODEL_DROP } from "./gliderMesh";
@@ -80,6 +81,7 @@ export class WorldRenderer {
   readonly water: WaterField;
   readonly airfield: Airfield;
   readonly towns: TownField;
+  readonly townAirfields: AirfieldField;
 
   cameraMode: CameraMode = "chase";
   orbitYaw = 0;
@@ -160,6 +162,11 @@ export class WorldRenderer {
     this.towns = new TownField(terrain, this.scene);
     this.cloudShadows.applyToObject(this.towns.group);
     this.towns.update(this.camera.position, 500);
+    this.townAirfields = new AirfieldField(
+      this.scene,
+      this.cloudShadows,
+      this.terrainStream.material,
+    );
     this.airfield = new Airfield(terrain);
     this.cloudShadows.applyToObject(this.airfield.group);
     this.scene.add(this.airfield.group);
@@ -402,6 +409,7 @@ export class WorldRenderer {
     this.terrainStream.update(this.camera.position);
     this.trees.update(this.camera.position, 3);
     this.towns.update(this.camera.position, 3);
+    this.townAirfields.update(this.camera.position, sim.wind);
     this.water.update(this.camera.position, menu ? this.menuTime : sim.time);
     this.clouds.update(this.camera.position, sim.liftField, 2);
 

@@ -644,11 +644,38 @@ function applyLakes(x: number, z: number, height: number, config: WorldConfig): 
 }
 
 /** The analytic ground with lake basins and stream beds carved into it. */
-export function terrainHeightAt(x: number, z: number, config: WorldConfig): number {
+export function rawTerrainHeightAt(x: number, z: number, config: WorldConfig): number {
   // Carve the lakes first, then the streams. A lake's shore blend reaches well
   // beyond its water polygon and would otherwise fill a nearby river channel
   // back in, burying the ribbon for hundreds of metres.
   return applyRivers(x, z, applyLakes(x, z, baseHeightAt(x, z, config), config), config);
+}
+
+/**
+ * Town airstrips grade a small apron into the ground. The surface is supplied
+ * by the airfield module through this hook, which keeps this file free of the
+ * town and terrain dependency cycle. A null result means "raw ground".
+ */
+export type AirfieldSurfaceSource = (x: number, z: number, config: WorldConfig) => number | null;
+let airfieldSurface: AirfieldSurfaceSource | null = null;
+
+export function setAirfieldSurfaceSource(source: AirfieldSurfaceSource | null): void {
+  airfieldSurface = source;
+}
+
+export function airfieldSurfaceHeightAt(
+  x: number,
+  z: number,
+  config: WorldConfig = WORLD,
+): number | null {
+  return airfieldSurface ? airfieldSurface(x, z, config) : null;
+}
+
+/** The analytic ground, including graded town airstrips. */
+export function terrainHeightAt(x: number, z: number, config: WorldConfig): number {
+  const airfield = airfieldSurfaceHeightAt(x, z, config);
+  if (airfield !== null) return airfield;
+  return rawTerrainHeightAt(x, z, config);
 }
 
 /**
@@ -1121,11 +1148,16 @@ export class Terrain {
   }
 
   heightAt(x: number, z: number): number {
+    // A graded airstrip is a precise local surface; the 50 m collision grid is
+    // too coarse to represent a 26 m runway, so use the analytic pad directly.
+    const airfield = airfieldSurfaceHeightAt(x, z, this.config);
+    if (airfield !== null) return airfield;
+
     // The 50 m collision grid cannot resolve a 20-40 m stream. Near a river
     // use the analytic carved bed, so the water surface is never below an
     // invisible collision wall and a landing actually ditches.
     if (riverBankClearanceAt(x, z, this.config) < 4) {
-      return terrainHeightAt(x, z, this.config);
+      return rawTerrainHeightAt(x, z, this.config);
     }
 
     const spacing = this.gridSpacing;
@@ -1151,6 +1183,9 @@ export class Terrain {
    * above them on convex ground and bury parts of the ribbon.
    */
   renderHeightAt(x: number, z: number): number {
+    const airfield = airfieldSurfaceHeightAt(x, z, this.config);
+    if (airfield !== null) return airfield;
+
     const spacing = this.gridSpacing;
     const gx = x / spacing;
     const gz = z / spacing;

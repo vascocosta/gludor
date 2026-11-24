@@ -1,4 +1,5 @@
 import { clamp, wrapDegrees } from "../core/math";
+import { runwayNumbers } from "../sim/airfields";
 import type { Simulation } from "../sim/simulation";
 
 export type HudState = "menu" | "flying" | "paused" | "ended" | "free";
@@ -74,6 +75,7 @@ export class Hud {
     if (state === "flying" || state === "paused") this.drawFlareCue(sim, cockpitView);
     this.drawMessage(sim);
     if (thermalHelpers && !sim.onGround) this.drawThermalHelper(sim);
+    if (!sim.onGround) this.drawAirfieldHelper(sim);
     if (sim.stall > 0.22) this.drawStall(sim);
     if (debug) this.drawDebug(sim, fps);
   }
@@ -503,28 +505,19 @@ export class Hud {
     this.roundRect(x - 16, y - 24, 104, 64, 10, "rgba(8,13,17,0.66)", BORDER);
 
     const accent = centered ? GREEN : CYAN;
-    ctx.save();
-    ctx.translate(x + 20, y + 8);
     if (centered) {
       // A steady green ring reads better than an arrow with nowhere to point.
+      ctx.save();
+      ctx.translate(x + 20, y + 8);
       ctx.strokeStyle = accent;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(0, -3, 4.5, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.restore();
     } else {
-      const relative = wrapDegrees(info.bearing - sim.heading) * (Math.PI / 180);
-      ctx.rotate(relative);
-      ctx.fillStyle = accent;
-      ctx.beginPath();
-      ctx.moveTo(0, -12);
-      ctx.lineTo(5, 2);
-      ctx.lineTo(0, -1);
-      ctx.lineTo(-5, 2);
-      ctx.closePath();
-      ctx.fill();
+      this.drawBearingArrow(x + 20, y + 8, info.bearing, sim.heading, accent);
     }
-    ctx.restore();
 
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
@@ -538,6 +531,79 @@ export class Hud {
     ctx.fillStyle = centered ? "rgba(125,223,149,0.9)" : "rgba(160,190,198,0.8)";
     ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, monospace";
     ctx.fillText(centered ? "CORE" : inside ? "thermal core" : "nearest thermal", x - 6, y + 24);
+  }
+
+  private drawAirfieldHelper(sim: Simulation): void {
+    const infos = sim.getNearestAirfieldInfos(2);
+    if (infos.length === 0) return;
+    const ctx = this.ctx;
+    const width = 170;
+    const right = this.width - 20;
+    const x = right - width;
+    const top = 92;
+    const rowGap = 42;
+    this.roundRect(
+      x,
+      top,
+      width,
+      46 + (infos.length - 1) * rowGap,
+      10,
+      "rgba(8,13,17,0.66)",
+      BORDER,
+    );
+
+    for (let i = 0; i < infos.length; i++) {
+      const info = infos[i];
+      const rowY = top + i * rowGap;
+      this.drawBearingArrow(x + 18, rowY + 17, info.bearing, sim.heading, CYAN);
+
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillStyle = "#e8f4f7";
+      ctx.fillText(
+        info.field.home ? `${info.field.name} · HOME` : info.field.name,
+        x + 32,
+        rowY + 17,
+      );
+
+      ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillStyle = "rgba(143, 227, 242, 0.75)";
+      ctx.fillText(
+        `${runwayNumbers(info.field)} · ${Math.round(info.field.length)} m`,
+        x + 32,
+        rowY + 34,
+      );
+
+      ctx.textAlign = "right";
+      ctx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillStyle = "#cfe2e7";
+      ctx.fillText(this.formatDistance(info.distance), right - 12, rowY + 34);
+      ctx.textAlign = "left";
+    }
+  }
+
+  /** A small triangle pointing along a bearing relative to the glider. */
+  private drawBearingArrow(
+    x: number,
+    y: number,
+    bearing: number,
+    heading: number,
+    color: string,
+  ): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(wrapDegrees(bearing - heading) * (Math.PI / 180));
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0, -12);
+    ctx.lineTo(5, 2);
+    ctx.lineTo(0, -1);
+    ctx.lineTo(-5, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
   private drawMessage(sim: Simulation): void {
@@ -659,5 +725,11 @@ export class Hud {
     const m = Math.floor(total / 60);
     const s = total % 60;
     return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
+  private formatDistance(distance: number): string {
+    return distance < 1_000
+      ? `${Math.round(distance)} m`
+      : `${(distance / 1_000).toFixed(1)} km`;
   }
 }

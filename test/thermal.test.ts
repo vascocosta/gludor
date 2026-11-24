@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Vector3 } from "three";
 import { DEFAULT_WEATHER, type WeatherSettings } from "../src/config";
+import { wrapDegrees } from "../src/core/math";
 import { Atmosphere } from "../src/sim/atmosphere";
 import { LiftField } from "../src/sim/lift";
 import { Simulation } from "../src/sim/simulation";
@@ -88,6 +89,30 @@ it("keeps the lift column fixed under its cloud marker", () => {
   expect(first.nearest).not.toBeNull();
   expect(later.nearestDistance).toBeCloseTo(first.nearestDistance, 6);
   expect(later.nearestBearing).toBeCloseTo(first.nearestBearing, 6);
+});
+
+it("points from the glider towards the nearest thermal", () => {
+  const terrain = new Terrain();
+  const sim = new Simulation(terrain, stillAir);
+  sim.startFlight(stillAir, "air");
+  sim.position.set(420, 1200, -720);
+  sim.velocity.set(0, 0, -29);
+  sim.step(1 / 240);
+
+  const thermal = sim.lift.nearest!;
+  const info = sim.getNearestThermalInfo()!;
+  const expected =
+    (Math.atan2(thermal.x - sim.position.x, -(thermal.z - sim.position.z)) * 180) /
+    Math.PI;
+  expect(wrapDegrees(info.bearing)).toBeCloseTo(wrapDegrees(expected), 1);
+
+  // The arrow's direction must have a positive dot product with the vector to
+  // the thermal; a reversed bearing would point away from it.
+  const rad = (info.bearing * Math.PI) / 180;
+  const dot =
+    Math.sin(rad) * (thermal.x - sim.position.x) -
+    Math.cos(rad) * (thermal.z - sim.position.z);
+  expect(dot).toBeGreaterThan(0);
 });
 
 it("reports a workable radius and whether the glider is inside the column", () => {

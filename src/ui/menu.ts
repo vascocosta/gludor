@@ -1,4 +1,10 @@
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherSettings } from "../config";
+import {
+  HOME_AIRFIELD,
+  airfieldLabel,
+  nearestAirfields,
+  type AirfieldSpec,
+} from "../sim/airfields";
 import type { FlightStats, LaunchType } from "../sim/simulation";
 
 type NullableElement<T> = T | null;
@@ -12,6 +18,7 @@ function byId<T extends HTMLElement>(id: string): T {
 interface SavedSettings {
   weather: WeatherSettings;
   launch: LaunchType;
+  field?: string;
 }
 
 export class MenuUI {
@@ -23,6 +30,8 @@ export class MenuUI {
   private readonly preset = byId<HTMLSelectElement>("preset");
   private readonly presetDescription = byId<HTMLElement>("preset-description");
   private readonly launch = byId<HTMLSelectElement>("launch");
+  private readonly launchHint = byId<HTMLElement>("launch-hint");
+  private readonly departure = byId<HTMLSelectElement>("departure");
   private readonly wind = byId<HTMLInputElement>("wind");
   private readonly windFrom = byId<HTMLInputElement>("windfrom");
   private readonly thermal = byId<HTMLInputElement>("thermal");
@@ -42,8 +51,10 @@ export class MenuUI {
 
   private weather: WeatherSettings;
   private selectedLaunch: LaunchType;
+  private selectedFieldId = "home";
+  private fields: AirfieldSpec[] = [];
   private callbacks: {
-    onFly: (weather: WeatherSettings, launch: LaunchType) => void;
+    onFly: (weather: WeatherSettings, launch: LaunchType, field: AirfieldSpec) => void;
     onResume: () => void;
     onRestart: () => void;
     onMenu: () => void;
@@ -52,7 +63,7 @@ export class MenuUI {
   };
 
   constructor(callbacks: {
-    onFly: (weather: WeatherSettings, launch: LaunchType) => void;
+    onFly: (weather: WeatherSettings, launch: LaunchType, field: AirfieldSpec) => void;
     onResume: () => void;
     onRestart: () => void;
     onMenu: () => void;
@@ -63,6 +74,7 @@ export class MenuUI {
     const saved = this.load();
     this.weather = { ...(saved?.weather ?? DEFAULT_WEATHER) };
     this.selectedLaunch = saved?.launch ?? "winch";
+    this.selectedFieldId = saved?.field ?? "home";
 
     for (const preset of WEATHER_PRESETS) {
       const option = document.createElement("option");
@@ -77,7 +89,9 @@ export class MenuUI {
 
     this.wire();
     this.applyWeather(this.weather, saved ? "custom" : "standard");
+    this.populateFields();
     this.launch.value = this.selectedLaunch;
+    this.syncField();
     this.menu.classList.remove("hidden");
   }
 
@@ -86,6 +100,10 @@ export class MenuUI {
     this.launch.addEventListener("change", () => {
       const value = this.launch.value;
       this.selectedLaunch = value === "air" ? "air" : value === "tow" ? "tow" : "winch";
+    });
+    this.departure.addEventListener("change", () => {
+      this.selectedFieldId = this.departure.value;
+      this.syncField();
     });
 
     const sliders: Array<[HTMLInputElement, keyof WeatherSettings]> = [
@@ -131,6 +149,48 @@ export class MenuUI {
     this.applyWeather(preset.weather, id);
   }
 
+  /** Home plus the nearest town strips, labelled by runway and distance. */
+  private populateFields(): void {
+    this.fields = nearestAirfields(0, 0, 12, 30_000);
+    this.departure.replaceChildren(
+      ...this.fields.map((field) => {
+        const option = document.createElement("option");
+        option.value = field.id;
+        if (field.home) {
+          option.textContent = airfieldLabel(field);
+        } else {
+          const distance = Math.hypot(field.x, field.z) / 1000;
+          option.textContent = `${airfieldLabel(field)} · ${distance.toFixed(1)} km`;
+        }
+        return option;
+      }),
+    );
+
+    const known = this.fields.some((field) => field.id === this.selectedFieldId);
+    if (!known) this.selectedFieldId = HOME_AIRFIELD.id;
+    this.departure.value = this.selectedFieldId;
+  }
+
+  private currentField(): AirfieldSpec {
+    return this.fields.find((field) => field.id === this.selectedFieldId) ?? HOME_AIRFIELD;
+  }
+
+  /** Aerotow is only flown from the home field's long asphalt runway. */
+  private syncField(): void {
+    const field = this.currentField();
+    const satellite = !field.home;
+    const tow = this.launch.querySelector<HTMLOptionElement>('option[value="tow"]');
+    if (tow) tow.disabled = satellite;
+
+    if (satellite && this.selectedLaunch === "tow") {
+      this.selectedLaunch = "winch";
+      this.launch.value = "winch";
+    }
+    this.launchHint.textContent = satellite
+      ? "Town strips launch by winch or air start. Aerotow stays at home."
+      : "Winch or aerotow for a real launch. Air start skips the climb.";
+  }
+
   private applyWeather(weather: WeatherSettings, presetId: string): void {
     this.weather = { ...weather };
     this.wind.value = String(weather.windSpeed);
@@ -166,7 +226,7 @@ export class MenuUI {
     this.pause.classList.add("hidden");
     this.summary.classList.add("hidden");
     this.help.classList.add("hidden");
-    this.callbacks.onFly({ ...this.weather }, this.selectedLaunch);
+    this.callbacks.onFly({ ...this.weather }, this.selectedLaunch, this.currentField());
   }
 
   showMenu(): void {
@@ -242,7 +302,11 @@ export class MenuUI {
 
   private save(): void {
     try {
-      const payload: SavedSettings = { weather: this.weather, launch: this.selectedLaunch };
+      const payload: SavedSettings = {
+        weather: this.weather,
+        launch: this.selectedLaunch,
+        field: this.selectedFieldId,
+      };
       localStorage.setItem("gludor.settings", JSON.stringify(payload));
     } catch {
       // Settings are a convenience, not a requirement.
@@ -258,6 +322,7 @@ export class MenuUI {
       return {
         weather: { ...DEFAULT_WEATHER, ...parsed.weather },
         launch: parsed.launch === "air" ? "air" : parsed.launch === "tow" ? "tow" : "winch",
+        field: typeof parsed.field === "string" ? parsed.field : undefined,
       };
     } catch {
       return null;

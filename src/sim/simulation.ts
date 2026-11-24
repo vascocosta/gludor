@@ -22,6 +22,12 @@ import {
   type WeatherSettings,
 } from "../config";
 import { AeroResult, ControlSurfaces, computeAero } from "./aero";
+import {
+  HOME_AIRFIELD,
+  forEachAirfieldInBounds,
+  takeoffHeading,
+  type AirfieldSpec,
+} from "./airfields";
 import { Atmosphere } from "./atmosphere";
 import { LiftField, LiftSample } from "./lift";
 import type { Terrain } from "./terrain";
@@ -57,7 +63,16 @@ export interface FlightStats {
   launch: LaunchType;
 }
 
+export interface NearestAirfieldInfo {
+  field: AirfieldSpec;
+  distance: number;
+  /** Bearing from the glider to the field, in degrees. */
+  bearing: number;
+}
+
 const CLEARANCE = 0.9;
+/** How far the landing helper looks for a strip; matches the rendered window. */
+const AIRFIELD_HELPER_RADIUS = 20_000;
 /** Winch power at the cable, in watts. */
 const WINCH_POWER = 85_000;
 /** Height above the field where the winch stops pulling. */
@@ -77,6 +92,8 @@ export class Simulation {
   weather: WeatherSettings = { ...DEFAULT_WEATHER };
   atmosphere: Atmosphere;
   liftField: LiftField;
+  /** The field this flight departs from. Aerotow still requires the home field. */
+  field: AirfieldSpec = HOME_AIRFIELD;
   assist = true;
 
   position = new Vector3();
@@ -124,6 +141,13 @@ export class Simulation {
   private messageText = "";
   private messageUntil = 0;
   private seed: number;
+  private nearestAirfieldCache: {
+    second: number;
+    x: number;
+    z: number;
+    count: number;
+    infos: NearestAirfieldInfo[];
+  } | null = null;
 
   stats: FlightStats = {
     airTime: 0,
@@ -162,6 +186,7 @@ export class Simulation {
   prepareMenu(): void {
     this.rebuildWeather(this.weather);
     this.mode = "menu";
+    this.field = HOME_AIRFIELD;
     this.launch = "winch";
     this.towPlane.hide();
     this.time = 0;
@@ -185,9 +210,19 @@ export class Simulation {
     this.showMessage("Press FLY to launch", 6);
   }
 
-  startFlight(weather: WeatherSettings, launch: LaunchType): void {
+  startFlight(
+    weather: WeatherSettings,
+    launch: LaunchType,
+    field: AirfieldSpec = HOME_AIRFIELD,
+  ): void {
     this.rebuildWeather(weather);
-    this.launch = launch;
+    this.field = field;
+    this.nearestAirfieldCache = null;
+    // Aerotow needs the home runway: the tug runs an axis-aligned profile and
+    // the terrain around the origin is the only place it is guaranteed clear.
+    const coercedTow = launch === "tow" && !field.home;
+    const effectiveLaunch: LaunchType = coercedTow ? "winch" : launch;
+    this.launch = effectiveLaunch;
     this.time = 0;
     this.flightTime = 0;
     this.cableAttached = false;
@@ -198,33 +233,49 @@ export class Simulation {
     this.angular.p = 0;
     this.angular.q = 0;
     this.angular.r = 0;
-    this.winchPosition.set(0, this.terrain.heightAt(0, WORLD.winchZ) + 2.5, WORLD.winchZ);
+
+    // Town strips are short grass fields: line up into the wind with the
+    // winch well down the launch direction. A cable anchored at the far
+    // threshold is too short for a small strip to reach release height, so the
+    // anchor sits out in the meadow beyond it.
+    const takeoff = field.home ? 0 : takeoffHeading(field, weather.windFrom);
+    const heading = takeoff * DEG;
+    const forwardX = Math.sin(heading);
+    const forwardZ = -Math.cos(heading);
+    const startAlong = field.home ? WORLD.startZ : field.length / 2 - 25;
+    const startX = field.x - forwardX * startAlong;
+    const startZ = field.z - forwardZ * startAlong;
+    const winchRun = field.home ? WORLD.startZ - WORLD.winchZ : 1_600;
+    const winchX = startX + forwardX * winchRun;
+    const winchZ = startZ + forwardZ * winchRun;
+
+    this.winchPosition.set(winchX, this.terrain.heightAt(winchX, winchZ) + 2.5, winchZ);
     this.towPlane.hide();
-    this.resetStats(launch);
 
     let startTas = 0;
 
-    if (launch === "winch") {
+    if (effectiveLaunch === "winch") {
       this.mode = "winch";
-      this.position.set(0, this.terrain.heightAt(0, WORLD.startZ) + CLEARANCE, WORLD.startZ);
+      this.position.set(startX, this.terrain.heightAt(startX, startZ) + CLEARANCE, startZ);
       this.velocity.set(0, 0, 0);
-      this.orientation.copy(quatFromHeadingPitchRoll(0, 0, 0));
+      this.orientation.copy(quatFromHeadingPitchRoll(takeoff, 0, 0));
       this.cableAttached = true;
       this.showMessage("Winch launch: hold on, release with SPACE", 5);
-    } else if (launch === "tow") {
+    } else if (effectiveLaunch === "tow") {
       this.mode = "tow";
-      this.position.set(0, this.terrain.heightAt(0, WORLD.startZ) + CLEARANCE, WORLD.startZ);
+      this.position.set(startX, this.terrain.heightAt(startX, startZ) + CLEARANCE, startZ);
       this.velocity.set(0, 0, 0);
-      this.orientation.copy(quatFromHeadingPitchRoll(0, 0, 0));
+      this.orientation.copy(quatFromHeadingPitchRoll(takeoff, 0, 0));
       this.cableAttached = true;
       this.towPlane.launch();
       this.showMessage("Aerotow: follow the tug, SPACE to release", 6);
     } else {
       this.mode = "free";
-      const startZ = 2200;
       const speed = 29;
       startTas = speed;
-      this.position.set(0, this.terrain.heightAt(0, startZ) + 650, startZ);
+      const airX = field.home ? 0 : field.x;
+      const airZ = field.home ? 2200 : field.z;
+      this.position.set(airX, this.terrain.heightAt(airX, airZ) + 650, airZ);
 
       // Start in a steady glide rather than pointed at the horizon: work out
       // the angle of attack and flight-path angle that balance lift and drag.
@@ -236,18 +287,27 @@ export class Simulation {
       const flightPath = -Math.atan(cd / cl);
       const pitch = alpha + flightPath;
 
-      this.orientation.copy(quatFromHeadingPitchRoll(0, pitch, 0));
+      this.orientation.copy(quatFromHeadingPitchRoll(takeoff, pitch, 0));
       this.axes.fromQuaternion(this.orientation);
       // The trim above is in air-relative terms. Add the local wind so the
       // glider starts at the intended airspeed, not groundspeed.
-      this.velocity.set(0, speed * Math.sin(flightPath), -speed * Math.cos(flightPath));
+      const horizontal = speed * Math.cos(flightPath);
+      this.velocity.set(
+        forwardX * horizontal,
+        speed * Math.sin(flightPath),
+        forwardZ * horizontal,
+      );
       this.velocity.add(this.atmosphere.windAt(this.position, this.time));
       this.showMessage("Air start - 650 m above the field", 4);
     }
 
     this.lastTas = startTas;
     this.lastPosition.copy(this.position);
+    this.resetStats(effectiveLaunch);
     this.modeMessageForLaunch();
+    if (coercedTow) {
+      this.showMessage("Aerotow is home-field only - winch launch", 4.5);
+    }
     this.updateTelemetry(0);
   }
 
@@ -851,6 +911,56 @@ export class Simulation {
         this.showMessage(`Aerotow release at ${Math.round(agl)} m - find the first thermal`, 5);
       }
     }
+  }
+
+  /**
+   * The closest strips within the helper's search radius, nearest first. The
+   * result is cached for a second of flight time so the HUD can call this every
+   * frame without walking the airfield grid each time.
+   */
+  getNearestAirfieldInfos(count = 2): NearestAirfieldInfo[] {
+    const limit = Math.max(1, Math.floor(count));
+    const x = this.position.x;
+    const z = this.position.z;
+    const second = Math.floor(this.time);
+    const cached = this.nearestAirfieldCache;
+    if (
+      cached &&
+      cached.second === second &&
+      cached.count === limit &&
+      Math.hypot(x - cached.x, z - cached.z) < 200
+    ) {
+      return cached.infos;
+    }
+
+    const picks: Array<{ field: AirfieldSpec; distance: number }> = [];
+    const consider = (field: AirfieldSpec): void => {
+      const distance = Math.hypot(field.x - x, field.z - z);
+      if (distance > AIRFIELD_HELPER_RADIUS) return;
+      if (picks.length === limit && distance >= picks[picks.length - 1].distance) return;
+
+      let index = picks.length;
+      while (index > 0 && distance < picks[index - 1].distance) index--;
+      picks.splice(index, 0, { field, distance });
+      if (picks.length > limit) picks.length = limit;
+    };
+
+    consider(HOME_AIRFIELD);
+    forEachAirfieldInBounds(
+      x - AIRFIELD_HELPER_RADIUS,
+      z - AIRFIELD_HELPER_RADIUS,
+      x + AIRFIELD_HELPER_RADIUS,
+      z + AIRFIELD_HELPER_RADIUS,
+      consider,
+    );
+
+    const infos = picks.map(({ field, distance }) => ({
+      field,
+      distance,
+      bearing: (Math.atan2(field.x - x, -(field.z - z)) * 180) / Math.PI,
+    }));
+    this.nearestAirfieldCache = { second, x, z, count: limit, infos };
+    return infos;
   }
 
   getNearestThermalInfo(): {

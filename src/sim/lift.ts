@@ -2,6 +2,7 @@ import { Vector3 } from "three";
 import { STREAMING, type WeatherSettings } from "../config";
 import { clamp, smoothstep } from "../core/math";
 import { hash2, mulberry32 } from "../core/rng";
+import { forEachAirfieldInBounds, type AirfieldSpec } from "./airfields";
 import type { Atmosphere } from "./atmosphere";
 import type { Terrain } from "./terrain";
 
@@ -9,6 +10,10 @@ const HOME_X = 620;
 const HOME_Z = -720;
 const REBUILD_DISTANCE = 2000;
 const THERMAL_CHANCE = 0.14;
+/** How far from a town strip its guaranteed thermal is allowed to sit. */
+const FIELD_THERMAL_WINDOW = 15_000;
+const FIELD_THERMAL_MIN = 260;
+const FIELD_THERMAL_MAX = 430;
 /**
  * Baseline radius scale for a thermal's cloud marker. The lift column adds
  * `THERMAL_LIFT_WIDTH` on top, so the core can be widened without turning
@@ -56,6 +61,7 @@ export class LiftField {
   private readonly seed: number;
   private readonly backgroundSink: number;
   private readonly scratchWind = new Vector3();
+  private readonly fieldThermals = new Map<string, Thermal>();
   private readonly homeCellI = Math.floor(HOME_X / STREAMING.thermalCellSize);
   private readonly homeCellJ = Math.floor(HOME_Z / STREAMING.thermalCellSize);
   private centerX = Number.POSITIVE_INFINITY;
@@ -106,6 +112,71 @@ export class LiftField {
     if (Math.hypot(HOME_X - cx, HOME_Z - cz) <= radius) {
       this.thermals.push(this.makeHomeThermal());
     }
+
+    // Town strips get one reliable thermal nearby, so a winch launch out in
+    // the countryside is not followed by a long glide to the nearest lift.
+    const fieldRadius = Math.min(radius, FIELD_THERMAL_WINDOW);
+    forEachAirfieldInBounds(
+      cx - fieldRadius,
+      cz - fieldRadius,
+      cx + fieldRadius,
+      cz + fieldRadius,
+      (field) => {
+        const thermal = this.fieldThermal(field);
+        if (Math.hypot(thermal.x - cx, thermal.z - cz) > radius) return;
+        this.thermals.push(thermal);
+      },
+    );
+  }
+
+  /**
+   * The thermal that belongs to a town strip. Its position is a hash of the
+   * strip, so it is stable while the field is revisited or the window moves.
+   */
+  private fieldThermal(field: AirfieldSpec): Thermal {
+    const cached = this.fieldThermals.get(field.id);
+    if (cached) return cached;
+
+    const rng = mulberry32(Math.floor(hash2(field.x, field.z, this.seed + 9337) * 4294967296));
+    const cloudRadius = 300 * THERMAL_RADIUS_SCALE;
+    let x = field.x;
+    let z = field.z;
+    let ground = field.elevation;
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const bearing = rng() * Math.PI * 2;
+      const distance = FIELD_THERMAL_MIN + rng() * (FIELD_THERMAL_MAX - FIELD_THERMAL_MIN);
+      const tx = field.x + Math.sin(bearing) * distance;
+      const tz = field.z + Math.cos(bearing) * distance;
+
+      // Keep the column off the runway itself: a launch should not start
+      // inside the lift, but the first climb should be a short glide away.
+      const h = (field.heading * Math.PI) / 180;
+      const along = (tx - field.x) * Math.sin(h) - (tz - field.z) * Math.cos(h);
+      const across = (tx - field.x) * Math.cos(h) + (tz - field.z) * Math.sin(h);
+      if (Math.abs(along) < field.length / 2 + 90 && Math.abs(across) < field.width + 90) continue;
+
+      const height = this.terrain.heightAt(tx, tz);
+      const water = this.terrain.waterLevelAt(tx, tz);
+      if (water !== null && height <= water + 0.6) continue;
+
+      x = tx;
+      z = tz;
+      ground = height;
+      break;
+    }
+
+    const thermal = this.makeThermal(
+      x,
+      z,
+      ground + 70,
+      this.settings.cloudBase,
+      cloudRadius * THERMAL_LIFT_WIDTH,
+      cloudRadius,
+      this.settings.thermalStrength * 0.95,
+    );
+    this.fieldThermals.set(field.id, thermal);
+    return thermal;
   }
 
   /**
@@ -207,6 +278,18 @@ export class LiftField {
     if (HOME_X >= minX && HOME_X <= maxX && HOME_Z >= minZ && HOME_Z <= maxZ) {
       visit(this.makeHomeThermal());
     }
+
+    forEachAirfieldInBounds(
+      minX - FIELD_THERMAL_MAX,
+      minZ - FIELD_THERMAL_MAX,
+      maxX + FIELD_THERMAL_MAX,
+      maxZ + FIELD_THERMAL_MAX,
+      (field) => {
+        const thermal = this.fieldThermal(field);
+        if (thermal.x < minX || thermal.x > maxX || thermal.z < minZ || thermal.z > maxZ) return;
+        visit(thermal);
+      },
+    );
   }
 
   sample(position: Vector3, _time: number, out = new LiftSample()): LiftSample {
@@ -228,7 +311,9 @@ export class LiftField {
       const dz = position.z - thermal.z;
       const distance = Math.hypot(dx, dz);
 
-      const bearing = (Math.atan2(dx, -dz) * 180) / Math.PI;
+      // Bearing from the glider to the thermal, so the HUD arrow points at it.
+      const bearing =
+        (Math.atan2(thermal.x - position.x, -(thermal.z - position.z)) * 180) / Math.PI;
       const score = distance - thermal.strength * 40;
       if (score < bestScore) {
         bestScore = score;

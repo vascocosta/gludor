@@ -2,7 +2,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { DEFAULT_WEATHER, TOWNS, type WeatherSettings } from "../src/config";
 import { Simulation } from "../src/sim/simulation";
 import { Terrain, waterLevelAt } from "../src/sim/terrain";
-import { buildingHeightAt, forEachTownInBounds, insideTown, type Town } from "../src/sim/towns";
+import {
+  HOME_TOWN_NAME,
+  buildingHeightAt,
+  forEachTownInBounds,
+  insideTown,
+  type Town,
+} from "../src/sim/towns";
 
 const stillAir: WeatherSettings = {
   ...DEFAULT_WEATHER,
@@ -37,6 +43,7 @@ describe("towns", () => {
 
     expect(first.length).toBeGreaterThan(0);
     expect(second.map(townKey)).toEqual(first.map(townKey));
+    expect(second.map((town) => town.name)).toEqual(first.map((town) => town.name));
     for (const town of shifted) {
       const match = first.find((other) => townKey(other) === townKey(town));
       if (match) expect(town).toEqual(match);
@@ -52,6 +59,18 @@ describe("towns", () => {
     expect(insideTown(0, -1000)).toBe(false);
     expect(insideTown(0, 1000)).toBe(false);
     expect(buildingHeightAt(0, 0)).toBeNull();
+  });
+
+  it("gives every town a stable fictional name", () => {
+    const towns = collect(-40_000, -40_000, 40_000, 40_000);
+    expect(towns.length).toBeGreaterThan(0);
+    for (const town of towns) {
+      expect(town.name.length).toBeGreaterThan(2);
+      expect(town.name.trim()).toBe(town.name);
+    }
+    expect(new Set(towns.map((town) => town.name)).size).toBeGreaterThan(
+      towns.length * 0.9,
+    );
   });
 
   it("spreads its buildings across a square grid", () => {
@@ -74,6 +93,7 @@ describe("towns", () => {
     const village = towns.find((town) => town.home);
 
     expect(village).toBeDefined();
+    expect(village!.name).toBe(HOME_TOWN_NAME);
     expect(village!.x).toBeCloseTo(home.x, 6);
     expect(village!.z).toBeCloseTo(home.z, 6);
     expect(village!.radius).toBe(home.radius);
