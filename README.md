@@ -44,8 +44,9 @@ snow-capped peaks holding the last light.*
 - **Instruments.** IAS, altitude, total-energy vario, slip ball, G-load, trim,
   and a compact flight computer with the nearest thermal distance and bearing;
   inside a core it switches to a centering cue that turns green when you are
-  centred. A second cue below it points at the nearest runway and shows its
-  designator and length, so there is always a landing option in sight. The 3D
+  centred. A second cue below it lists the two nearest runways with their
+  bearings, designators and lengths, so there is always a landing option in
+  sight. The 3D
   cockpit panel carries live needles and digital readouts too.
 - **Views.** Chase, cockpit (canopy frame, arched dash, knee wells and live
   panel), and orbit. Mouse-drag looks around; double-click resets. A detached
@@ -238,8 +239,8 @@ On the menu, **Enter** starts the selected flight.
    and touch down wings level and slow. Below 20 m above the ground the HUD
    shows a small flare strip with height, sink and a marker over the green
    1.2–6 m band, so you can judge the hold-off even when the nose hides the
-   near runway. The top-right field cue keeps the nearest strip's bearing,
-   designator and length in view if the lift dies on you. Ground contact above
+   near runway. The top-right field cue keeps the two nearest strips' bearings,
+   designators and lengths in view if the lift dies on you. Ground contact above
    3.4 m/s vertical speed, more than ~30° of bank, or a nose-down attitude is treated as a
    crash. A safe touchdown starts a real landing roll: the glider keeps moving,
    `Q`/`E` steer with the rudder, and `B` applies the wheel brake. The summary

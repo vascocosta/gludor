@@ -127,11 +127,12 @@ describe("town airfields", () => {
     // Overfly a point one kilometre east of the strip; it is due west.
     sim.position.set(field.x + 1_000, field.elevation + 500, field.z);
     sim.time = 2;
-    const info = sim.getNearestAirfieldInfo();
-    expect(info).not.toBeNull();
-    expect(info!.field.id).toBe(field.id);
-    expect(info!.distance).toBeCloseTo(1_000, 6);
-    expect(wrapDegrees(info!.bearing)).toBeCloseTo(270, 6);
+    const infos = sim.getNearestAirfieldInfos();
+    expect(infos.length).toBe(2);
+    expect(infos[0].field.id).toBe(field.id);
+    expect(infos[0].distance).toBeCloseTo(1_000, 6);
+    expect(wrapDegrees(infos[0].bearing)).toBeCloseTo(270, 6);
+    expect(infos[1].distance).toBeGreaterThanOrEqual(infos[0].distance);
   });
 
   it("recognises the graded footprint and nothing beside it", () => {

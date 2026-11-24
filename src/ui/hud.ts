@@ -505,28 +505,19 @@ export class Hud {
     this.roundRect(x - 16, y - 24, 104, 64, 10, "rgba(8,13,17,0.66)", BORDER);
 
     const accent = centered ? GREEN : CYAN;
-    ctx.save();
-    ctx.translate(x + 20, y + 8);
     if (centered) {
       // A steady green ring reads better than an arrow with nowhere to point.
+      ctx.save();
+      ctx.translate(x + 20, y + 8);
       ctx.strokeStyle = accent;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(0, -3, 4.5, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.restore();
     } else {
-      const relative = wrapDegrees(info.bearing - sim.heading) * (Math.PI / 180);
-      ctx.rotate(relative);
-      ctx.fillStyle = accent;
-      ctx.beginPath();
-      ctx.moveTo(0, -12);
-      ctx.lineTo(5, 2);
-      ctx.lineTo(0, -1);
-      ctx.lineTo(-5, 2);
-      ctx.closePath();
-      ctx.fill();
+      this.drawBearingArrow(x + 20, y + 8, info.bearing, sim.heading, accent);
     }
-    ctx.restore();
 
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
@@ -543,17 +534,56 @@ export class Hud {
   }
 
   private drawAirfieldHelper(sim: Simulation): void {
-    const info = sim.getNearestAirfieldInfo();
-    if (!info) return;
+    const infos = sim.getNearestAirfieldInfos(2);
+    if (infos.length === 0) return;
     const ctx = this.ctx;
     const x = this.width - 108;
     const y = 116;
-    this.roundRect(x - 16, y - 24, 104, 76, 10, "rgba(8,13,17,0.66)", BORDER);
+    const rowGap = 44;
+    this.roundRect(
+      x - 16,
+      y - 24,
+      104,
+      76 + (infos.length - 1) * rowGap,
+      10,
+      "rgba(8,13,17,0.66)",
+      BORDER,
+    );
 
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    for (let i = 0; i < infos.length; i++) {
+      const info = infos[i];
+      const rowY = y + i * rowGap;
+      this.drawBearingArrow(x + 20, rowY + 8, info.bearing, sim.heading, CYAN);
+
+      ctx.font = "600 11px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillStyle = "#cfe2e7";
+      ctx.fillText(this.formatDistance(info.distance), x + 34, rowY + 2);
+
+      ctx.fillStyle = "rgba(143, 227, 242, 0.75)";
+      ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillText(
+        `${info.field.home ? "HOME" : runwayNumbers(info.field)} · ${Math.round(info.field.length)} m`,
+        x - 6,
+        rowY + 24,
+      );
+    }
+  }
+
+  /** A small triangle pointing along a bearing relative to the glider. */
+  private drawBearingArrow(
+    x: number,
+    y: number,
+    bearing: number,
+    heading: number,
+    color: string,
+  ): void {
+    const ctx = this.ctx;
     ctx.save();
-    ctx.translate(x + 20, y + 8);
-    ctx.rotate(wrapDegrees(info.bearing - sim.heading) * (Math.PI / 180));
-    ctx.fillStyle = CYAN;
+    ctx.translate(x, y);
+    ctx.rotate(wrapDegrees(bearing - heading) * (Math.PI / 180));
+    ctx.fillStyle = color;
     ctx.beginPath();
     ctx.moveTo(0, -12);
     ctx.lineTo(5, 2);
@@ -562,23 +592,6 @@ export class Hud {
     ctx.closePath();
     ctx.fill();
     ctx.restore();
-
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.font = "600 11px ui-monospace, SFMono-Regular, Menlo, monospace";
-    ctx.fillStyle = "#cfe2e7";
-    ctx.fillText(this.formatDistance(info.distance), x + 34, y + 2);
-
-    ctx.fillStyle = "rgba(160,190,198,0.8)";
-    ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, monospace";
-    ctx.fillText("nearest field", x - 6, y + 24);
-
-    ctx.fillStyle = "rgba(143, 227, 242, 0.75)";
-    ctx.fillText(
-      `${info.field.home ? "HOME" : runwayNumbers(info.field)} · ${Math.round(info.field.length)} m`,
-      x - 6,
-      y + 40,
-    );
   }
 
   private drawMessage(sim: Simulation): void {

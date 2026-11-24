@@ -145,7 +145,8 @@ export class Simulation {
     second: number;
     x: number;
     z: number;
-    info: NearestAirfieldInfo | null;
+    count: number;
+    infos: NearestAirfieldInfo[];
   } | null = null;
 
   stats: FlightStats = {
@@ -913,11 +914,12 @@ export class Simulation {
   }
 
   /**
-   * The closest strip within the helper's search radius, if any. The result is
-   * cached for a second of flight time so the HUD can call this every frame
-   * without walking the airfield grid each time.
+   * The closest strips within the helper's search radius, nearest first. The
+   * result is cached for a second of flight time so the HUD can call this every
+   * frame without walking the airfield grid each time.
    */
-  getNearestAirfieldInfo(): NearestAirfieldInfo | null {
+  getNearestAirfieldInfos(count = 2): NearestAirfieldInfo[] {
+    const limit = Math.max(1, Math.floor(count));
     const x = this.position.x;
     const z = this.position.z;
     const second = Math.floor(this.time);
@@ -925,20 +927,22 @@ export class Simulation {
     if (
       cached &&
       cached.second === second &&
+      cached.count === limit &&
       Math.hypot(x - cached.x, z - cached.z) < 200
     ) {
-      return cached.info;
+      return cached.infos;
     }
 
-    const nearest: { field: AirfieldSpec | null; distance: number } = {
-      field: null,
-      distance: Infinity,
-    };
+    const picks: Array<{ field: AirfieldSpec; distance: number }> = [];
     const consider = (field: AirfieldSpec): void => {
       const distance = Math.hypot(field.x - x, field.z - z);
-      if (distance > AIRFIELD_HELPER_RADIUS || distance >= nearest.distance) return;
-      nearest.field = field;
-      nearest.distance = distance;
+      if (distance > AIRFIELD_HELPER_RADIUS) return;
+      if (picks.length === limit && distance >= picks[picks.length - 1].distance) return;
+
+      let index = picks.length;
+      while (index > 0 && distance < picks[index - 1].distance) index--;
+      picks.splice(index, 0, { field, distance });
+      if (picks.length > limit) picks.length = limit;
     };
 
     consider(HOME_AIRFIELD);
@@ -950,16 +954,13 @@ export class Simulation {
       consider,
     );
 
-    const field = nearest.field;
-    const info: NearestAirfieldInfo | null = field
-      ? {
-          field,
-          distance: nearest.distance,
-          bearing: (Math.atan2(field.x - x, -(field.z - z)) * 180) / Math.PI,
-        }
-      : null;
-    this.nearestAirfieldCache = { second, x, z, info };
-    return info;
+    const infos = picks.map(({ field, distance }) => ({
+      field,
+      distance,
+      bearing: (Math.atan2(field.x - x, -(field.z - z)) * 180) / Math.PI,
+    }));
+    this.nearestAirfieldCache = { second, x, z, count: limit, infos };
+    return infos;
   }
 
   getNearestThermalInfo(): {
