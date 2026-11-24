@@ -187,7 +187,7 @@ Open the printed URL (normally <http://localhost:5173>), pick a weather preset,
 a departure field and a launch, then press **Fly**.
 
 ```bash
-npm test        # 80 headless flight/aero/weather/streaming/lake/river/town/airfield/mountain/tow tests
+npm test        # 81 headless flight/aero/weather/streaming/lake/river/town/airfield/mountain/tow tests
 npm run typecheck
 npm run build   # static production build in dist/
 npm run preview # serve the production build locally

@@ -105,6 +105,35 @@ describe("landing rollout", () => {
     expect(sim.ias).toBeLessThan(20);
   });
 
+  it("never accelerates from sideways drift during rollout", () => {
+    const sim = new Simulation(terrain, stillAir);
+    sim.startFlight(stillAir, "air");
+    const ground = terrain.heightAt(0, 0);
+    sim.position.set(0, ground + 1.2, 0);
+    sim.orientation.copy(quatFromHeadingPitchRoll(0, 0.08, 0));
+    // 20 m/s down the runway with 10 m/s of crab.
+    sim.velocity.set(10, -1.5, -20);
+
+    const touchdown = stepUntil(sim, (s) => s.mode === "rollout", 5);
+    expect(Number.isFinite(touchdown)).toBe(true);
+    const initialSpeed = Math.hypot(sim.velocity.x, sim.velocity.z);
+    expect(initialSpeed).toBeGreaterThan(20);
+
+    sim.input.brake = 1;
+    let maxSpeed = initialSpeed;
+    for (let i = 0; i < 240 * 30; i++) {
+      sim.step(dt);
+      maxSpeed = Math.max(maxSpeed, Math.hypot(sim.velocity.x, sim.velocity.z));
+      if (sim.mode === "landed") break;
+    }
+
+    // Feeding the total speed back in as the forward component used to let a
+    // crabbed touchdown run away to hundreds of metres per second.
+    expect(maxSpeed).toBeLessThan(initialSpeed + 1e-6);
+    expect(sim.mode).toBe("landed");
+    expect(sim.velocity.length()).toBe(0);
+  });
+
   it("uses the wheel brake to shorten the rollout", () => {
     const measure = (brake: number): number => {
       const sim = flyIntoRollout();

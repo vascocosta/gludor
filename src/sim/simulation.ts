@@ -813,11 +813,11 @@ export class Simulation {
 
   /** Ground roll after a safe landing: friction, brakes, steering and attitude. */
   private updateRollout(dt: number): void {
-    let speed = Math.hypot(this.velocity.x, this.velocity.z);
+    const totalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
 
     // A little rudder authority at speed, fading out as the glider slows, so
     // it cannot pirouette on the spot.
-    const authority = clamp(speed / LANDING.steerSpeed, 0, 1);
+    const authority = clamp(totalSpeed / LANDING.steerSpeed, 0, 1);
     const steer = clamp(this.input.rudder, -1, 1) * LANDING.steerRate * authority;
     const heading = wrapDegrees(this.heading + steer * RAD * dt);
 
@@ -826,20 +826,28 @@ export class Simulation {
     const rightX = Math.cos(heading * DEG);
     const rightZ = Math.sin(heading * DEG);
 
+    // Keep the longitudinal and sideways components separate. Treating the
+    // total speed as the forward component adds the sideways drift back on top
+    // of the reduced speed, so a crabbed touchdown would accelerate without
+    // bound instead of settling onto the wheel.
+    const forward = this.velocity.x * forwardX + this.velocity.z * forwardZ;
+    let lateral = this.velocity.x * rightX + this.velocity.z * rightZ;
+
     const brake = clamp(this.input.brake, 0, 1);
-    speed = Math.max(0, speed - (LANDING.friction + brake * LANDING.brakeDecel) * dt);
+    const decel = (LANDING.friction + brake * LANDING.brakeDecel) * dt;
+    const nextForward =
+      Math.abs(forward) <= decel ? 0 : forward - Math.sign(forward) * decel;
 
     // Scrub off sideways drift so the glider follows the wheel instead of
     // sliding like a shopping trolley. Deliberately gentle: no ground loop.
-    let lateral = this.velocity.x * rightX + this.velocity.z * rightZ;
     const grip = LANDING.lateralGrip * dt;
     if (Math.abs(lateral) <= grip) lateral = 0;
     else lateral -= Math.sign(lateral) * grip;
 
     this.velocity.set(
-      forwardX * speed + rightX * lateral,
+      forwardX * nextForward + rightX * lateral,
       0,
-      forwardZ * speed + rightZ * lateral,
+      forwardZ * nextForward + rightZ * lateral,
     );
 
     // Settle onto the ground: wings level with a slight nose-up tailwheel
@@ -855,7 +863,7 @@ export class Simulation {
     this.angular.q = 0;
     this.angular.r = 0;
 
-    if (speed < LANDING.stopSpeed) {
+    if (Math.hypot(nextForward, lateral) < LANDING.stopSpeed) {
       this.velocity.set(0, 0, 0);
       this.mode = "landed";
       this.showMessage("Landed", 4);
