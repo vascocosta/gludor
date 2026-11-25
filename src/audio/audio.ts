@@ -70,25 +70,41 @@ const SYNTH_CHORDS = [
   { root: 40, intervals: [0, 4, 7, 10, 14] }, // E7
 ] as const;
 const SYNTH_KEYS = [-5, -2, 0, 2, 5, 7] as const;
-const SYNTH_ARP = [0, 1, 2, 3, 4, 3, 2, 1] as const;
-/** Sparse lead motif, indexed by sixth-note step; null rests. */
-const SYNTH_LEAD_MOTIF = [
-  null,
-  null,
-  4,
-  null,
-  null,
-  null,
-  3,
-  null,
-  2,
-  null,
-  null,
-  4,
-  null,
-  2,
-  null,
-  null,
+/** Arpeggio contours; one per bar, so the line changes with every chord. */
+const SYNTH_ARP_PATTERNS = [
+  [0, 1, 2, 3, 4, 3, 2, 1], // up and back
+  [0, 2, 1, 3, 2, 4, 3, 1], // skipping
+  [4, 3, 2, 0, 1, 2, 3, 4], // pedal around the fifth
+  [0, 3, 1, 4, 2, 3, 1, 2], // broken
+] as const;
+/**
+ * Bass lines on the sixteenth grid, in semitones above the chord root. They
+ * alternate a driving eighth pulse with syncopated octave and fifth pushes.
+ */
+const SYNTH_BASS_LINES = [
+  [0, null, 0, null, 0, null, 12, null, 0, null, 0, null, 7, null, 12, null],
+  [0, null, null, 12, 0, null, 7, null, 0, null, 0, 12, null, 7, null, 12],
+  [0, null, 0, null, 7, null, 0, 12, 0, null, 0, null, 12, null, 7, 12],
+  [0, null, 12, null, 0, null, 7, null, 0, null, 12, null, 7, 12, null, 7],
+] as const;
+/**
+ * Lead phrases, two bars each, starting at bar two. Degrees index the current
+ * chord, so the line follows the harmony; nulls are rests. The three phrases
+ * form a call, an answer and a cadence.
+ */
+const SYNTH_LEAD_PHRASES = [
+  [
+    null, null, 4, null, null, 3, null, null, 2, null, null, null, 3, null, 4, null,
+    null, null, 2, null, null, 1, null, null, 2, null, null, null, null, null, null, null,
+  ],
+  [
+    null, 4, null, 3, null, null, 2, null, 3, null, 4, null, null, 3, null, null,
+    null, 2, null, null, 3, null, null, 2, 1, null, null, null, null, null, null, null,
+  ],
+  [
+    4, null, 3, null, 2, null, 1, null, 2, null, 3, null, 4, null, null, null,
+    3, null, 2, null, 1, null, null, 2, 0, null, null, null, null, null, null, null,
+  ],
 ] as const;
 /**
  * Synthwave mix. This is the single place to rebalance the track: lower the
@@ -714,48 +730,76 @@ export class AudioEngine {
     const notes = this.synthChord;
     if (notes.length === 0) return;
 
-    // Bass: root on every beat, with an octave lift on the and of three.
-    if (beat % 4 === 0) {
-      this.synthBass(midiToHz(this.synthRoot - 12), SYNTH_MIX.bass, 0.42);
-    } else if (beat % 4 === 2) {
-      const lift = beat === 6 ? 12 : 0;
-      this.synthBass(midiToHz(this.synthRoot - 12 + lift), SYNTH_MIX.bassLift, 0.26);
+    // Bass: each bar draws a different line, so the low end pushes, rests and
+    // jumps octaves instead of repeating one root pattern throughout.
+    const bassLine = SYNTH_BASS_LINES[bar % SYNTH_BASS_LINES.length];
+    const bassOffset = bassLine[beat];
+    if (bassOffset !== null) {
+      const strong = beat % 4 === 0;
+      const level = strong ? SYNTH_MIX.bass : SYNTH_MIX.bassLift;
+      const duration = strong ? 0.42 : beat % 2 === 0 ? 0.26 : 0.18;
+      this.synthBass(midiToHz(this.synthRoot - 12 + bassOffset), level, duration);
     }
 
-    // Arpeggio: eighths in the first half, sixteenths once the B section opens.
-    const arpEvery = bar >= 4 ? 1 : 2;
+    // Arpeggio: eighths in the first half, sixteenths once the B section opens,
+    // with a short run into each four-bar fill. Each bar gets a fresh contour.
+    const pattern = SYNTH_ARP_PATTERNS[bar % SYNTH_ARP_PATTERNS.length];
+    const arpEvery =
+      bar >= 4 || (bar === 1 && beat >= 14) || (bar === 3 && beat >= 14) ? 1 : 2;
     if (beat % arpEvery === 0) {
-      const index = Math.floor(step / arpEvery) % SYNTH_ARP.length;
-      // Alternate the whole arpeggio an octave up every bar, so the line
-      // climbs and falls with the progression instead of sitting in one
-      // register for the entire loop.
-      const octave = bar % 2 === 0 ? 12 : 24;
-      const tone = notes[SYNTH_ARP[index] % notes.length] + octave;
-      const pan = index % 2 === 0 ? -0.4 : 0.4;
+      const arpStep = Math.floor(beat / arpEvery) % pattern.length;
+      // Let the line climb through the B section and fall back for the
+      // cadence, instead of alternating register by bar.
+      const octave = bar === 7 ? 12 : bar >= 4 ? 24 : bar % 2 === 0 ? 12 : 24;
+      const tone = notes[pattern[arpStep] % notes.length] + octave;
+      const pan = arpStep % 2 === 0 ? -0.4 : 0.4;
       this.synthArp(midiToHz(tone), SYNTH_MIX.arp, pan);
     }
 
-    // Four-on-the-floor drums, with a small fill at the end of the loop.
+    // Four-on-the-floor, with syncopated pushes in the B section and a
+    // different fill at the end of each four-bar phrase.
     if (beat % 4 === 0) {
       this.duckSynths();
       this.synthKick(SYNTH_MIX.kick);
     }
+    if ((bar === 1 || bar === 5) && beat === 10) this.synthKick(SYNTH_MIX.fill * 0.7);
+    if (bar === 2 && beat === 14) this.synthKick(SYNTH_MIX.fill * 0.8);
+    if (bar === 7 && beat === 15) this.synthKick(SYNTH_MIX.fill);
+
     if (beat === 4 || beat === 12) this.synthSnare(SYNTH_MIX.snare);
-    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(SYNTH_MIX.fill);
-    if (beat % 2 === 0) {
-      this.synthHat(
-        beat % 4 === 0 ? SYNTH_MIX.hat : SYNTH_MIX.hatSoft,
-        beat === 14,
-        beat % 4 === 0 ? -0.35 : 0.35,
-      );
+    if ((bar === 2 || bar === 6) && beat === 7) this.synthSnare(SYNTH_MIX.fill * 0.45);
+    if (bar === 3 && beat >= 14) {
+      this.synthSnare(SYNTH_MIX.fill * (0.5 + (beat - 14) * 0.15));
+    }
+    if (bar === 7 && beat >= 13) {
+      this.synthSnare(SYNTH_MIX.fill * (0.45 + (beat - 13) * 0.12));
     }
 
-    // A sparse lead phrase arrives after the intro and follows the chord.
+    // Hats mark the offbeats, open before the fills and thicken to sixteenths
+    // in the B section.
+    if (bar === 4 && beat === 0) {
+      this.synthHat(SYNTH_MIX.hat * 1.6, true, 0);
+    } else if (beat % 2 === 0) {
+      const open = (bar === 3 && beat === 14) || (bar === 7 && beat === 14);
+      this.synthHat(
+        beat % 4 === 0 ? SYNTH_MIX.hat : SYNTH_MIX.hatSoft,
+        open,
+        beat % 4 === 0 ? -0.35 : 0.35,
+      );
+    } else if (bar >= 4) {
+      this.synthHat(SYNTH_MIX.hatSoft * 0.5, false, beat % 4 === 1 ? 0.2 : -0.2);
+    }
+
+    // Lead: three two-bar phrases arrive after the intro, so the melody is a
+    // call, answer and cadence rather than one bar repeating.
     if (bar >= 2) {
-      const tone = SYNTH_LEAD_MOTIF[beat];
+      const phrase = SYNTH_LEAD_PHRASES[Math.floor((bar - 2) / 2)];
+      const phraseStep = ((bar - 2) % 2) * SYNTH_STEPS_PER_BAR + beat;
+      const tone = phrase[phraseStep];
       if (tone !== null) {
         const note = notes[tone % notes.length] + 12;
-        this.synthLead(midiToHz(note), SYNTH_MIX.lead, 0.55);
+        const duration = phraseStep % SYNTH_STEPS_PER_BAR < 8 ? 0.55 : 0.45;
+        this.synthLead(midiToHz(note), SYNTH_MIX.lead, duration);
       }
     }
   }
