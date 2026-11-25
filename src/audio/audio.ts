@@ -90,7 +90,31 @@ const SYNTH_LEAD_MOTIF = [
   null,
   null,
 ] as const;
-const SYNTH_PAD_GAINS = [0.13, 0.095, 0.07, 0.055, 0.04] as const;
+/**
+ * Synthwave mix. This is the single place to rebalance the track: lower the
+ * melodic levels or raise the drums. The compressor only catches peaks.
+ */
+const SYNTH_MIX = {
+  pad: [0.13, 0.095, 0.07, 0.055, 0.04],
+  arp: 0.0015,
+  lead: 0.012,
+  bass: 0.09,
+  bassLift: 0.045,
+  kick: 1.35,
+  snare: 0.56,
+  fill: 0.38,
+  hat: 0.09,
+  hatSoft: 0.05,
+  drumBus: 2.0,
+  duck: 0.07,
+  compressor: {
+    threshold: -4,
+    knee: 4,
+    ratio: 12,
+    attack: 0.002,
+    release: 0.1,
+  },
+} as const;
 
 function midiToHz(note: number): number {
   return 440 * 2 ** ((note - 69) / 12);
@@ -235,11 +259,11 @@ export class AudioEngine {
       const musicGain = context.createGain();
       musicGain.gain.value = this.musicEnabled ? MUSIC_LEVEL : 0;
       const musicCompressor = context.createDynamicsCompressor();
-      musicCompressor.threshold.value = -12;
-      musicCompressor.knee.value = 12;
-      musicCompressor.ratio.value = 4;
-      musicCompressor.attack.value = 0.003;
-      musicCompressor.release.value = 0.18;
+      musicCompressor.threshold.value = SYNTH_MIX.compressor.threshold;
+      musicCompressor.knee.value = SYNTH_MIX.compressor.knee;
+      musicCompressor.ratio.value = SYNTH_MIX.compressor.ratio;
+      musicCompressor.attack.value = SYNTH_MIX.compressor.attack;
+      musicCompressor.release.value = SYNTH_MIX.compressor.release;
       musicGain.connect(musicCompressor);
       musicCompressor.connect(master);
       this.musicGain = musicGain;
@@ -248,7 +272,7 @@ export class AudioEngine {
       // pulls the melodic bus down hard for a moment, so the beat punches
       // through even when the synths are busy.
       const drumGain = context.createGain();
-      drumGain.gain.value = 1.75;
+      drumGain.gain.value = SYNTH_MIX.drumBus;
       drumGain.connect(musicGain);
       this.drumGain = drumGain;
 
@@ -651,7 +675,7 @@ export class AudioEngine {
     for (let i = 0; i < this.musicVoices.length; i++) {
       const voice = this.musicVoices[i];
       const midi = this.synthChord[i] ?? this.synthChord[0] + 12;
-      const gain = SYNTH_PAD_GAINS[i] ?? 0.08;
+      const gain = SYNTH_MIX.pad[i] ?? 0.08;
       voice.oscillator.frequency.setTargetAtTime(
         midiToHz(midi),
         now + i * 0.012,
@@ -676,7 +700,7 @@ export class AudioEngine {
       const param = node.gain;
       param.cancelScheduledValues(now);
       param.setValueAtTime(Math.max(0.001, param.value), now);
-      param.linearRampToValueAtTime(0.14, now + 0.012);
+      param.linearRampToValueAtTime(SYNTH_MIX.duck, now + 0.012);
       param.setTargetAtTime(1, now + 0.07, 0.14);
     }
   }
@@ -692,10 +716,10 @@ export class AudioEngine {
 
     // Bass: root on every beat, with an octave lift on the and of three.
     if (beat % 4 === 0) {
-      this.synthBass(midiToHz(this.synthRoot - 12), 0.1, 0.42);
+      this.synthBass(midiToHz(this.synthRoot - 12), SYNTH_MIX.bass, 0.42);
     } else if (beat % 4 === 2) {
       const lift = beat === 6 ? 12 : 0;
-      this.synthBass(midiToHz(this.synthRoot - 12 + lift), 0.05, 0.26);
+      this.synthBass(midiToHz(this.synthRoot - 12 + lift), SYNTH_MIX.bassLift, 0.26);
     }
 
     // Arpeggio: eighths in the first half, sixteenths once the B section opens.
@@ -708,19 +732,19 @@ export class AudioEngine {
       const octave = bar % 2 === 0 ? 12 : 24;
       const tone = notes[SYNTH_ARP[index] % notes.length] + octave;
       const pan = index % 2 === 0 ? -0.4 : 0.4;
-      this.synthArp(midiToHz(tone), 0.004, pan);
+      this.synthArp(midiToHz(tone), SYNTH_MIX.arp, pan);
     }
 
     // Four-on-the-floor drums, with a small fill at the end of the loop.
     if (beat % 4 === 0) {
       this.duckSynths();
-      this.synthKick(1.2);
+      this.synthKick(SYNTH_MIX.kick);
     }
-    if (beat === 4 || beat === 12) this.synthSnare(0.5);
-    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(0.34);
+    if (beat === 4 || beat === 12) this.synthSnare(SYNTH_MIX.snare);
+    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(SYNTH_MIX.fill);
     if (beat % 2 === 0) {
       this.synthHat(
-        beat % 4 === 0 ? 0.09 : 0.05,
+        beat % 4 === 0 ? SYNTH_MIX.hat : SYNTH_MIX.hatSoft,
         beat === 14,
         beat % 4 === 0 ? -0.35 : 0.35,
       );
@@ -731,7 +755,7 @@ export class AudioEngine {
       const tone = SYNTH_LEAD_MOTIF[beat];
       if (tone !== null) {
         const note = notes[tone % notes.length] + 12;
-        this.synthLead(midiToHz(note), 0.021, 0.55);
+        this.synthLead(midiToHz(note), SYNTH_MIX.lead, 0.55);
       }
     }
   }
