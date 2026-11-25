@@ -70,12 +70,27 @@ const SYNTH_CHORDS = [
   { root: 40, intervals: [0, 4, 7, 10, 14] }, // E7
 ] as const;
 const SYNTH_KEYS = [-5, -2, 0, 2, 5, 7] as const;
-/** Arpeggio contours; one per bar, so the line changes with every chord. */
-const SYNTH_ARP_PATTERNS = [
-  [0, 1, 2, 3, 4, 3, 2, 1], // up and back
-  [0, 2, 1, 3, 2, 4, 3, 1], // skipping
-  [4, 3, 2, 0, 1, 2, 3, 4], // pedal around the fifth
-  [0, 3, 1, 4, 2, 3, 1, 2], // broken
+/**
+ * Arpeggio phrases, two bars each. Values are extended chord-tone indexes:
+ * 0-4 are the chord tones, 5-9 the same tones an octave up. Nulls are rests.
+ */
+const SYNTH_ARP_PHRASES = [
+  [
+    0, null, 2, null, 1, null, 3, null, 4, null, 3, null, 5, null, 4, null,
+    0, null, 1, null, 2, null, 3, null, 4, null, 5, null, 4, 3, null, 2,
+  ],
+  [
+    0, 2, 4, 2, 5, 4, 2, null, 1, 3, 4, 3, 5, 4, 3, null,
+    0, 2, 4, 2, 5, 4, 7, 4, 5, 7, 5, 4, 3, 5, 4, 2,
+  ],
+  [
+    4, 2, 5, 2, 4, 5, 7, 5, 4, 2, 0, 2, 4, 7, 5, 2,
+    5, 4, 2, 4, 5, 7, 9, 7, 5, 4, 2, 4, 7, 5, 4, 2,
+  ],
+  [
+    9, 7, 5, 7, 9, 7, 5, 4, 2, 4, 5, 7, 9, 7, 5, 4,
+    7, 5, 4, 2, 4, 5, 7, 5, 4, 2, 0, 2, 4, null, 5, null,
+  ],
 ] as const;
 /**
  * Bass lines on the sixteenth grid, in semitones above the chord root. They
@@ -88,22 +103,22 @@ const SYNTH_BASS_LINES = [
   [0, null, 12, null, 0, null, 7, null, 0, null, 12, null, 7, 12, null, 7],
 ] as const;
 /**
- * Lead phrases, two bars each, starting at bar two. Degrees index the current
- * chord, so the line follows the harmony; nulls are rests. The three phrases
- * form a call, an answer and a cadence.
+ * Lead phrases, two bars each, starting at bar two. Values are extended
+ * chord-tone indexes; nulls are rests. The three phrases form a call, an answer
+ * and a cadence, with syncopated runs and octave leaps.
  */
 const SYNTH_LEAD_PHRASES = [
   [
-    null, null, 4, null, null, 3, null, null, 2, null, null, null, 3, null, 4, null,
-    null, null, 2, null, null, 1, null, null, 2, null, null, null, null, null, null, null,
+    null, 4, null, 5, 4, null, 2, null, 3, null, 4, null, 5, 7, null, 5,
+    null, 4, 2, null, 4, 5, null, 4, 2, null, 0, null, 2, null, 4, null,
   ],
   [
-    null, 4, null, 3, null, null, 2, null, 3, null, 4, null, null, 3, null, null,
-    null, 2, null, null, 3, null, null, 2, 1, null, null, null, null, null, null, null,
+    5, null, 4, 2, 4, null, 5, 7, null, 5, 4, 2, null, 4, 5, null,
+    7, 5, 4, 2, 4, 5, 7, 9, null, 7, 5, 4, 5, null, 4, 2,
   ],
   [
-    4, null, 3, null, 2, null, 1, null, 2, null, 3, null, 4, null, null, null,
-    3, null, 2, null, 1, null, null, 2, 0, null, null, null, null, null, null, null,
+    9, 7, null, 5, 4, null, 7, 9, null, 7, 5, 4, null, 2, 4, null,
+    7, 5, 4, 2, null, 4, 5, 4, 2, 0, null, 2, 0, null, null, null,
   ],
 ] as const;
 /**
@@ -134,6 +149,16 @@ const SYNTH_MIX = {
 
 function midiToHz(note: number): number {
   return 440 * 2 ** ((note - 69) / 12);
+}
+
+/**
+ * Turn an extended chord-tone index into a MIDI note: 0-4 select the chord
+ * tones, 5-9 the same tones an octave up, and so on.
+ */
+function chordTone(notes: readonly number[], index: number): number {
+  const degree = index % notes.length;
+  const octave = Math.floor(index / notes.length) * 12;
+  return notes[degree] + octave;
 }
 
 /** Small WebAudio soundscape: wind, vario beeps, a stall horn and a thud. */
@@ -741,18 +766,14 @@ export class AudioEngine {
       this.synthBass(midiToHz(this.synthRoot - 12 + bassOffset), level, duration);
     }
 
-    // Arpeggio: eighths in the first half, sixteenths once the B section opens,
-    // with a short run into each four-bar fill. Each bar gets a fresh contour.
-    const pattern = SYNTH_ARP_PATTERNS[bar % SYNTH_ARP_PATTERNS.length];
-    const arpEvery =
-      bar >= 4 || (bar === 1 && beat >= 14) || (bar === 3 && beat >= 14) ? 1 : 2;
-    if (beat % arpEvery === 0) {
-      const arpStep = Math.floor(beat / arpEvery) % pattern.length;
-      // Let the line climb through the B section and fall back for the
-      // cadence, instead of alternating register by bar.
-      const octave = bar === 7 ? 12 : bar >= 4 ? 24 : bar % 2 === 0 ? 12 : 24;
-      const tone = notes[pattern[arpStep] % notes.length] + octave;
-      const pan = arpStep % 2 === 0 ? -0.4 : 0.4;
+    // Arpeggio: a new two-bar phrase every pair of bars. The phrases grow
+    // through the loop, from a lilting eighth pulse to dense sixteenth runs.
+    const arpPhrase = SYNTH_ARP_PHRASES[Math.floor(bar / 2)];
+    const arpStep = (bar % 2) * SYNTH_STEPS_PER_BAR + beat;
+    const arpTone = arpPhrase[arpStep];
+    if (arpTone !== null) {
+      const tone = chordTone(notes, arpTone) + 12;
+      const pan = ((arpTone % notes.length) / (notes.length - 1)) * 0.8 - 0.4;
       this.synthArp(midiToHz(tone), SYNTH_MIX.arp, pan);
     }
 
@@ -790,16 +811,19 @@ export class AudioEngine {
       this.synthHat(SYNTH_MIX.hatSoft * 0.5, false, beat % 4 === 1 ? 0.2 : -0.2);
     }
 
-    // Lead: three two-bar phrases arrive after the intro, so the melody is a
-    // call, answer and cadence rather than one bar repeating.
+    // Lead: three two-bar phrases arrive after the intro. Each note sustains
+    // until the next one, so 16th runs are short and rests let the line breathe.
     if (bar >= 2) {
       const phrase = SYNTH_LEAD_PHRASES[Math.floor((bar - 2) / 2)];
       const phraseStep = ((bar - 2) % 2) * SYNTH_STEPS_PER_BAR + beat;
       const tone = phrase[phraseStep];
       if (tone !== null) {
-        const note = notes[tone % notes.length] + 12;
-        const duration = phraseStep % SYNTH_STEPS_PER_BAR < 8 ? 0.55 : 0.45;
-        this.synthLead(midiToHz(note), SYNTH_MIX.lead, duration);
+        let gap = 1;
+        while (phraseStep + gap < phrase.length && phrase[phraseStep + gap] === null) {
+          gap++;
+        }
+        const duration = clamp(gap * this.musicStepSeconds * 1.1, 0.18, 0.8);
+        this.synthLead(midiToHz(chordTone(notes, tone) + 12), SYNTH_MIX.lead, duration);
       }
     }
   }
