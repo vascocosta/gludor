@@ -248,7 +248,7 @@ export class AudioEngine {
       // pulls the melodic bus down hard for a moment, so the beat punches
       // through even when the synths are busy.
       const drumGain = context.createGain();
-      drumGain.gain.value = 1.5;
+      drumGain.gain.value = 1.75;
       drumGain.connect(musicGain);
       this.drumGain = drumGain;
 
@@ -676,7 +676,7 @@ export class AudioEngine {
       const param = node.gain;
       param.cancelScheduledValues(now);
       param.setValueAtTime(Math.max(0.001, param.value), now);
-      param.linearRampToValueAtTime(0.18, now + 0.012);
+      param.linearRampToValueAtTime(0.14, now + 0.012);
       param.setTargetAtTime(1, now + 0.07, 0.14);
     }
   }
@@ -708,19 +708,19 @@ export class AudioEngine {
       const octave = bar % 2 === 0 ? 12 : 24;
       const tone = notes[SYNTH_ARP[index] % notes.length] + octave;
       const pan = index % 2 === 0 ? -0.4 : 0.4;
-      this.synthArp(midiToHz(tone), 0.008, pan);
+      this.synthArp(midiToHz(tone), 0.004, pan);
     }
 
     // Four-on-the-floor drums, with a small fill at the end of the loop.
     if (beat % 4 === 0) {
       this.duckSynths();
-      this.synthKick(1.05);
+      this.synthKick(1.2);
     }
-    if (beat === 4 || beat === 12) this.synthSnare(0.44);
-    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(0.3);
+    if (beat === 4 || beat === 12) this.synthSnare(0.5);
+    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(0.34);
     if (beat % 2 === 0) {
       this.synthHat(
-        beat % 4 === 0 ? 0.08 : 0.045,
+        beat % 4 === 0 ? 0.09 : 0.05,
         beat === 14,
         beat % 4 === 0 ? -0.35 : 0.35,
       );
@@ -809,7 +809,7 @@ export class AudioEngine {
       filter.type = "highpass";
       filter.frequency.value = 2400;
       const clickGain = this.context.createGain();
-      clickGain.gain.setValueAtTime(0.2, now);
+      clickGain.gain.setValueAtTime(0.24, now);
       clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
       click.connect(filter);
       filter.connect(clickGain);
