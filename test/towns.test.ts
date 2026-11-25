@@ -73,17 +73,20 @@ describe("towns", () => {
     );
   });
 
-  it("spreads its buildings across a square grid", () => {
+  it("spreads its buildings across a coherent town footprint", () => {
     const towns = collect(-20_000, -30_000, 20_000, 30_000);
     expect(towns.length).toBeGreaterThan(0);
 
     for (const town of towns) {
-      expect(town.streets.length).toBe(18);
+      // Street grids vary from loose village lanes to a full market grid; the
+      // outline can trim a few edge lanes, so the count is not fixed.
+      expect(town.streets.length).toBeGreaterThanOrEqual(8);
+      expect(town.streets.length).toBeLessThanOrEqual(18);
       const xs = town.buildings.map((building) => building.x);
       const zs = town.buildings.map((building) => building.z);
       const width = Math.max(...xs) - Math.min(...xs);
       const depth = Math.max(...zs) - Math.min(...zs);
-      expect(Math.min(width, depth)).toBeGreaterThan(Math.max(width, depth) * 0.6);
+      expect(Math.min(width, depth)).toBeGreaterThan(Math.max(width, depth) * 0.35);
     }
   });
 
@@ -168,14 +171,17 @@ describe("towns", () => {
     expect(buildingHeightAt(40_000, 40_000)).toBeNull();
   });
 
-  it("leaves a believable number of towns in a flight area", () => {
+  it("leaves a believable and varied number of towns in a flight area", () => {
     const towns = collect(-20_000, -30_000, 20_000, 30_000);
     expect(towns.length).toBeGreaterThan(3);
     expect(towns.length).toBeLessThan(120);
 
-    const averageBuildings =
-      towns.reduce((sum, town) => sum + town.buildings.length, 0) / towns.length;
-    expect(averageBuildings).toBeGreaterThan(250);
+    const counts = towns.map((town) => town.buildings.length);
+    const averageBuildings = counts.reduce((sum, count) => sum + count, 0) / counts.length;
+    expect(averageBuildings).toBeGreaterThan(80);
+    expect(averageBuildings).toBeLessThan(260);
+    expect(Math.max(...counts) - Math.min(...counts)).toBeGreaterThan(40);
+    expect(new Set(towns.map((town) => town.streets.length)).size).toBeGreaterThan(1);
   });
 
   it("ends the flight when the glider hits a roof", () => {

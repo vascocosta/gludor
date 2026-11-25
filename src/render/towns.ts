@@ -13,7 +13,13 @@ import {
   Vector3,
 } from "three";
 import { TOWNS } from "../config";
-import { BUILDING_SCALE, forEachTownInBounds, type Building, type Town } from "../sim/towns";
+import {
+  BUILDING_SCALE,
+  forEachTownInBounds,
+  type Building,
+  type Street,
+  type Town,
+} from "../sim/towns";
 import type { Terrain } from "../sim/terrain";
 
 const WALL_CAPACITY = 6000;
@@ -64,7 +70,9 @@ export class TownField {
   private readonly color = new Color();
 
   private towns: Town[] = [];
-  private buildIndex = 0;
+  private townIndex = 0;
+  private buildingIndex = 0;
+  private streetIndex = 0;
   private wallCount = 0;
   private roofCount = 0;
   private windowCount = 0;
@@ -140,12 +148,24 @@ export class TownField {
     }
 
     const start = performance.now();
-    while (this.buildIndex < this.towns.length) {
-      this.addTown(this.towns[this.buildIndex++]);
-      if (performance.now() - start >= budgetMs) break;
+    let processed = 0;
+    while (this.townIndex < this.towns.length) {
+      const town = this.towns[this.townIndex];
+      while (this.buildingIndex < town.buildings.length) {
+        this.addBuilding(town.buildings[this.buildingIndex++]);
+        processed++;
+        if ((processed & 3) === 0 && performance.now() - start >= budgetMs) return;
+      }
+      while (this.streetIndex < town.streets.length) {
+        this.addStreet(town.streets[this.streetIndex++], town.streetWidth);
+        if (performance.now() - start >= budgetMs) return;
+      }
+      this.townIndex++;
+      this.buildingIndex = 0;
+      this.streetIndex = 0;
     }
 
-    if (this.buildIndex >= this.towns.length) this.finishBuild();
+    this.finishBuild();
   }
 
   private startBuild(cx: number, cz: number): void {
@@ -154,7 +174,9 @@ export class TownField {
     this.lastBuildZ = cz;
     this.buildX = cx;
     this.buildZ = cz;
-    this.buildIndex = 0;
+    this.townIndex = 0;
+    this.buildingIndex = 0;
+    this.streetIndex = 0;
     this.towns = [];
     this.wallCount = 0;
     this.roofCount = 0;
@@ -167,13 +189,6 @@ export class TownField {
     forEachTownInBounds(cx - radius, cz - radius, cx + radius, cz + radius, (town) => {
       this.towns.push(town);
     });
-  }
-
-  private addTown(town: Town): void {
-    for (const building of town.buildings) {
-      this.addBuilding(building);
-    }
-    this.addStreets(town);
   }
 
   private addBuilding(building: Building): void {
@@ -254,39 +269,36 @@ export class TownField {
   }
 
   /** One quad ribbon per street, sampled along the ground. */
-  private addStreets(town: Town): void {
-    const half = town.streetWidth / 2;
+  private addStreet(street: Street, streetWidth: number): void {
+    const half = streetWidth / 2;
+    const dx = Math.cos(street.angle);
+    const dz = Math.sin(street.angle);
+    const px = -dz;
+    const pz = dx;
+    const length = street.length;
+    const steps = Math.max(2, Math.ceil(length / 8));
+    let previous: { x: number; z: number; left: number; right: number } | null = null;
 
-    for (const street of town.streets) {
-      const dx = Math.cos(street.angle);
-      const dz = Math.sin(street.angle);
-      const px = -dz;
-      const pz = dx;
-      const length = street.length;
-      const steps = Math.max(2, Math.ceil(length / 4));
-      let previous: { x: number; z: number; left: number; right: number } | null = null;
-
-      for (let k = 0; k <= steps; k++) {
-        const t = -length / 2 + (k / steps) * length;
-        const x = street.x + dx * t;
-        const z = street.z + dz * t;
-        const leftX = x - px * half;
-        const leftZ = z - pz * half;
-        const rightX = x + px * half;
-        const rightZ = z + pz * half;
-        const left = this.terrain.renderHeightAt(leftX, leftZ);
-        const right = this.terrain.renderHeightAt(rightX, rightZ);
-        const middle = this.terrain.renderHeightAt(x, z);
-        const water = this.terrain.waterLevelAt(x, z);
-        if (water !== null && water > middle - 0.2) {
-          previous = null;
-          continue;
-        }
-
-        const current = { x, z, left, right };
-        if (previous) this.addStreetQuad(previous, current, px, pz, half);
-        previous = current;
+    for (let k = 0; k <= steps; k++) {
+      const t = -length / 2 + (k / steps) * length;
+      const x = street.x + dx * t;
+      const z = street.z + dz * t;
+      const leftX = x - px * half;
+      const leftZ = z - pz * half;
+      const rightX = x + px * half;
+      const rightZ = z + pz * half;
+      const left = this.terrain.renderHeightAt(leftX, leftZ);
+      const right = this.terrain.renderHeightAt(rightX, rightZ);
+      const middle = this.terrain.renderHeightAt(x, z);
+      const water = this.terrain.waterLevelAt(x, z);
+      if (water !== null && water > middle - 0.2) {
+        previous = null;
+        continue;
       }
+
+      const current = { x, z, left, right };
+      if (previous) this.addStreetQuad(previous, current, px, pz, half);
+      previous = current;
     }
   }
 

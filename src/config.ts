@@ -468,7 +468,7 @@ export const TOWNS = {
   minRadius: 480,
   radiusRange: 640,
   /** Hard cap on buildings in one town. */
-  maxBuildings: 450,
+  maxBuildings: 340,
   /** Towns are farmland settlements, not hill stations. */
   maxCenterHeight: 700,
   /** Reject sites steeper than this (rise over run) at the centre and rim. */

@@ -102,8 +102,9 @@ give the first thermals and ridge runs somewhere to begin.
 
 Beyond the home valley the world keeps going: rolling farmland, dense
 woodland, lakes and streams, market towns, and a seeded range of rounded hills
-and alpine peaks with snow on the highest tops. Everything streams around the
-glider, so there is no edge to reach.
+and alpine peaks with snow on the highest tops. Towns range from a few lanes
+around a green to a dense market grid, and each has its own outline. Everything
+streams around the glider, so there is no edge to reach.
 
 About half the towns also own a grass strip, named after the town — `Ashwick ·
 09/27 · 539 m`, for example. The departure picker lists home and the nearest

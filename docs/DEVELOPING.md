@@ -140,9 +140,11 @@ exactly what you can hit. All walls, roofs, spires, and windows in range are
 instanced (four draw calls), and the streets are one merged ribbon that follows
 the ground. Buildings extend two metres below their plot to hide slopes rather
 than flattening the terrain. The fixed home town is one of the largest, around
-400 buildings, and always gets a church tower. Generated towns use a nine-by-nine
-street grid with cottages and barns along every lane and occasional tenements;
-houses are twice life-size so they read from soaring altitude.
+300 buildings, and always gets a church tower. Generated towns choose a 5–9 lane
+street grid, a seeded radial outline, and a random plot density, so the result
+ranges from a loose hamlet to a dense market town. Buildings are twice life-size
+so they read from soaring altitude; tenements appear only in the larger
+settlements.
 
 Town strips follow the natural long profile of their hillside but are levelled
 across their width, with a short blend back into the meadow. The finest render
@@ -202,10 +204,11 @@ the old field stays visible while the new one is built.
   bake is refreshed when the cloud field changes or the camera moves 3.5 km.
 
 Only one of the tree and town fields rebuilds at a time, so their per-frame
-budgets never stack. The town build is still atomic per town: `addTown()` can
-take tens of milliseconds for a large settlement. If that ever becomes a
-problem, the next step is to build buildings incrementally within the 2 ms
-budget.
+budgets never stack. Town instances are built progressively: buildings arrive in
+small batches and streets one at a time, returning to the frame loop whenever
+the 2 ms budget is spent. Town *layout* is still generated when the window is
+collected; the reduced house counts keep that cost small, and a lazy generation
+queue is the next step if it ever shows up as a spike.
 
 The main periodic cost to watch is a full town rebuild immediately after a
 window changes; the old town field is kept visible until the new one is ready,
@@ -267,9 +270,9 @@ The headless suite exercises the model rather than the DOM:
   braking shortens the roll, rudder steering turns it, it cannot bounce back
   into the air, a crabbed touchdown cannot gain speed, air time freezes at
   touchdown, and it settles into the landed state.
-- Towns: deterministic layout and names, airfield exclusion, the fixed home
-  town and its tower, dry workable plots, roof queries, believable density, and
-  a fatal roof strike.
+- Towns: deterministic layout and names, varied street grids and outlines,
+  airfield exclusion, the fixed home town and its tower, dry workable plots,
+  roof queries, believable density, and a fatal roof strike.
 - Airfields: deterministic streaming, sane counts and lengths, dry graded
   profiles, the near-terrain cut-out under every runway, home-plus-nearest
   ordering, two nearest-field bearings, inside-the-pad queries, wind-chosen

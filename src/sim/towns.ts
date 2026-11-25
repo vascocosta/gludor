@@ -76,8 +76,9 @@ const TOWN_MAX_BUILDINGS = TOWNS.maxBuildings;
  */
 export const BUILDING_SCALE = 2;
 
-/** Number of street lines in each direction. Nine makes an 8 x 8 block grid. */
-const TOWN_GRID = 9;
+/** The street grid varies by town: a loose village grid or a dense market grid. */
+const TOWN_GRID_MIN = 5;
+const TOWN_GRID_MAX = 9;
 
 /** Street frontage per building plot, including its garden and spacing. */
 const TOWN_FRONTAGE = 50 * BUILDING_SCALE;
@@ -436,12 +437,15 @@ function layoutTown(base: TownBase, config: WorldConfig): Town {
 
   const streetLength = radius * 1.3;
   const streetWidth = (radius > 320 ? 5.6 : 4.6) * BUILDING_SCALE;
-  const gridStep = streetLength / TOWN_GRID;
-  const gridStart = -((TOWN_GRID - 1) / 2) * gridStep;
+  const gridCount = base.home
+    ? TOWN_GRID_MAX
+    : TOWN_GRID_MIN + Math.floor(rng() * (TOWN_GRID_MAX - TOWN_GRID_MIN + 1));
+  const gridStep = streetLength / gridCount;
+  const gridStart = -((gridCount - 1) / 2) * gridStep;
   const streets: Street[] = [];
-  for (let i = 0; i < TOWN_GRID; i++) {
+  for (let i = 0; i < gridCount; i++) {
     const offset = gridStart + i * gridStep;
-    // Parallel lanes in both directions make a square grid of blocks.
+    // Parallel lanes in both directions make a grid of blocks.
     streets.push({ x: x - sin * offset, z: z + cos * offset, angle, length: streetLength });
     streets.push({
       x: x - cos * offset,
@@ -451,9 +455,85 @@ function layoutTown(base: TownBase, config: WorldConfig): Town {
     });
   }
 
-  // Frontage scales with house size. Every street gets rows on both sides,
-  // which fills the blocks instead of leaving a long empty cross.
+  // A soft radial outline gives each town a distinct edge instead of a square
+  // grid of buildings. The phases and the gentle stretch are seeded with the
+  // town, so the same settlement is identical every time it is streamed in.
+  const phase2 = rng() * Math.PI * 2;
+  const phase3 = rng() * Math.PI * 2;
+  const phase5 = rng() * Math.PI * 2;
+  const stretchX = base.home ? 1 : 0.95 + rng() * 0.1;
+  const stretchZ = base.home ? 1 : 0.95 + rng() * 0.1;
+  const baseFactor = base.home ? 0.68 : 0.76;
+  const amp2 = base.home ? 0.03 : 0.12;
+  const amp3 = base.home ? 0.02 : 0.07;
+  const amp5 = base.home ? 0.01 : 0.04;
+  const insideOutline = (u: number, v: number): boolean => {
+    const su = u / stretchX;
+    const sv = v / stretchZ;
+    const theta = Math.atan2(sv, su);
+    const shape =
+      1 +
+      amp2 * Math.sin(2 * theta + phase2) +
+      amp3 * Math.sin(3 * theta + phase3) +
+      amp5 * Math.sin(5 * theta + phase5);
+    return Math.hypot(su, sv) <= radius * baseFactor * shape;
+  };
+  const localOf = (wx: number, wz: number): [number, number] => {
+    const dx = wx - x;
+    const dz = wz - z;
+    return [dx * cos + dz * sin, -dx * sin + dz * cos];
+  };
+
+  // Trim each street to the outline so the road grid ends at the town edge
+  // instead of running out across the fields.
+  const trimmed: Street[] = [];
+  const trimSteps = 32;
   for (const street of streets) {
+    const dx = Math.cos(street.angle);
+    const dz = Math.sin(street.angle);
+    let runStart = Number.NaN;
+    let bestStart = 0;
+    let bestEnd = 0;
+
+    for (let k = 0; k <= trimSteps; k++) {
+      const s = -street.length / 2 + (k / trimSteps) * street.length;
+      const wx = street.x + dx * s;
+      const wz = street.z + dz * s;
+      const [u, v] = localOf(wx, wz);
+      const inside = insideOutline(u, v);
+      if (inside && Number.isNaN(runStart)) runStart = s;
+      if (!inside && !Number.isNaN(runStart)) {
+        const end = s - street.length / trimSteps;
+        if (end - runStart > bestEnd - bestStart) {
+          bestStart = runStart;
+          bestEnd = end;
+        }
+        runStart = Number.NaN;
+      }
+    }
+    if (!Number.isNaN(runStart)) {
+      if (street.length / 2 - runStart > bestEnd - bestStart) {
+        bestStart = runStart;
+        bestEnd = street.length / 2;
+      }
+    }
+
+    const length = bestEnd - bestStart;
+    if (length < Math.max(40, streetWidth * 3)) continue;
+    const centre = (bestStart + bestEnd) / 2;
+    trimmed.push({
+      ...street,
+      x: street.x + dx * centre,
+      z: street.z + dz * centre,
+      length,
+    });
+  }
+
+  const density = base.home ? 0.88 : 0.56 + rng() * 0.32;
+
+  // Frontage scales with house size. Rows run along both sides of every lane,
+  // while the density and outline leave room for gardens, greens, and gaps.
+  for (const street of trimmed) {
     const sc = Math.cos(street.angle);
     const ss = Math.sin(street.angle);
     // Rows follow the lane; negating the yaw keeps each ridge parallel to it.
@@ -474,6 +554,10 @@ function layoutTown(base: TownBase, config: WorldConfig): Town {
         const v = side * (offset + rng() * 2.5);
         const bx = street.x + u * sc - v * ss;
         const bz = street.z + u * ss + v * sc;
+        const [lu, lv] = localOf(bx, bz);
+        if (!insideOutline(lu, lv)) continue;
+        if (rng() > density) continue;
+
         const yaw = houseYaw + (rng() - 0.5) * 0.1;
         const tenement = radius > 650 && rng() < 0.05;
         const kind: BuildingKind = tenement ? "tenement" : rng() < 0.18 ? "barn" : "cottage";
@@ -497,12 +581,16 @@ function layoutTown(base: TownBase, config: WorldConfig): Town {
   // on a lane, where it can be a landmark without blocking the grid. The home
   // town always gets one so it reads from the field.
   if (base.forceTower || (radius > 280 && rng() < 0.55)) {
-    const u = (rng() < 0.5 ? -1 : 1) * gridStep * 0.5;
-    const v = (rng() < 0.5 ? -1 : 1) * gridStep * 0.5;
+    let tu = (rng() < 0.5 ? -1 : 1) * gridStep * 0.5;
+    let tv = (rng() < 0.5 ? -1 : 1) * gridStep * 0.5;
+    if (!insideOutline(tu, tv)) {
+      tu = 0;
+      tv = 0;
+    }
     tryAddBuilding(
       buildings,
-      x + u * cos - v * sin,
-      z + u * sin + v * cos,
+      x + tu * cos - tv * sin,
+      z + tu * sin + tv * cos,
       -angle,
       "tower",
       rng,
@@ -518,7 +606,7 @@ function layoutTown(base: TownBase, config: WorldConfig): Town {
     angle,
     streetLength,
     streetWidth,
-    streets,
+    streets: trimmed,
     buildings,
     home: base.home,
   };
