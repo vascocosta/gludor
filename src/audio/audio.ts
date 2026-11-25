@@ -661,18 +661,22 @@ export class AudioEngine {
     const arpEvery = bar >= 4 ? 1 : 2;
     if (beat % arpEvery === 0) {
       const index = Math.floor(step / arpEvery) % SYNTH_ARP.length;
-      const tone = notes[SYNTH_ARP[index] % notes.length] + 12;
+      // Alternate the whole arpeggio an octave up every bar, so the line
+      // climbs and falls with the progression instead of sitting in one
+      // register for the entire loop.
+      const octave = bar % 2 === 0 ? 12 : 24;
+      const tone = notes[SYNTH_ARP[index] % notes.length] + octave;
       const pan = index % 2 === 0 ? -0.4 : 0.4;
-      this.synthArp(midiToHz(tone), 0.032, pan);
+      this.synthArp(midiToHz(tone), 0.034, pan);
     }
 
     // Four-on-the-floor drums, with a small fill at the end of the loop.
-    if (beat % 4 === 0) this.synthKick(0.32);
-    if (beat === 4 || beat === 12) this.synthSnare(0.14);
-    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(0.1);
+    if (beat % 4 === 0) this.synthKick(0.5);
+    if (beat === 4 || beat === 12) this.synthSnare(0.21);
+    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(0.15);
     if (beat % 2 === 0) {
       this.synthHat(
-        beat % 4 === 0 ? 0.02 : 0.012,
+        beat % 4 === 0 ? 0.032 : 0.018,
         beat === 14,
         beat % 4 === 0 ? -0.35 : 0.35,
       );
@@ -744,8 +748,8 @@ export class AudioEngine {
     const now = this.context.currentTime;
     const oscillator = this.context.createOscillator();
     oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(145, now);
-    oscillator.frequency.exponentialRampToValueAtTime(42, now + 0.18);
+    oscillator.frequency.setValueAtTime(160, now);
+    oscillator.frequency.exponentialRampToValueAtTime(48, now + 0.18);
     const gain = this.context.createGain();
     gain.gain.setValueAtTime(level, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
@@ -761,7 +765,7 @@ export class AudioEngine {
       filter.type = "highpass";
       filter.frequency.value = 2400;
       const clickGain = this.context.createGain();
-      clickGain.gain.setValueAtTime(0.035, now);
+      clickGain.gain.setValueAtTime(0.06, now);
       clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
       click.connect(filter);
       filter.connect(clickGain);
