@@ -54,6 +54,15 @@
               <small class="hint">Home or a nearby town grass strip.</small>
             </label>
 
+            <label class="field field-wide">
+              <span>Soundtrack</span>
+              <select id="music-track">
+                <option value="ambient">Quiet ambient</option>
+                <option value="synthwave">Night drive · synthwave</option>
+              </select>
+              <small class="hint">Two live-generated scores. M toggles music in flight.</small>
+            </label>
+
             <div class="slider-block">
               <label class="slider-row">
                 <span>Wind <b id="wind-value"></b></span>
@@ -172,7 +181,7 @@
               <dt><kbd>F2</kbd></dt><dd>Toggle flight assist</dd>
               <dt><kbd>F3</kbd></dt><dd>Telemetry overlay</dd>
               <dt><kbd>F4</kbd></dt><dd>Thermal helpers (particles and core cue)</dd>
-              <dt><kbd>M</kbd></dt><dd>Ambient music on / off (off by default)</dd>
+              <dt><kbd>M</kbd></dt><dd>Music on / off (ambient or synthwave, chosen in the menu)</dd>
               <dt><kbd>SHIFT</kbd> + <kbd>S</kbd></dt><dd>Sound effects on / off (music unaffected)</dd>
             </dl>
           </div>

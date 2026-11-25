@@ -1,6 +1,6 @@
 import "./style.css";
 import { LANDING, PHYSICS_STEP, type WeatherSettings } from "./config";
-import { AudioEngine } from "./audio/audio";
+import { AudioEngine, type MusicTrack } from "./audio/audio";
 import { KeyboardInput } from "./input/keyboard";
 import { Hud, type HudState } from "./ui/hud";
 import { MenuUI } from "./ui/menu";
@@ -29,6 +29,7 @@ let freeCamera = false;
 let lastWeather: WeatherSettings | null = null;
 let lastLaunch: LaunchType = "winch";
 let lastField: AirfieldSpec = HOME_AIRFIELD;
+let lastMusicTrack: MusicTrack = "ambient";
 let helpResumesFlight = false;
 let accumulator = 0;
 let landedTimer = 0;
@@ -39,7 +40,8 @@ let lastPointerY = 0;
 let fps = 60;
 
 const ui = new MenuUI({
-  onFly: (weather, launch, field) => startFlight(weather, launch, field),
+  onFly: (weather, launch, field, musicTrack) =>
+    startFlight(weather, launch, field, musicTrack),
   onResume: () => resumeFlight(),
   onRestart: () => restartFlight(),
   onMenu: () => showMenu(),
@@ -62,9 +64,11 @@ function startFlight(
   weather: WeatherSettings,
   launch: LaunchType,
   field: AirfieldSpec,
+  musicTrack: MusicTrack,
 ): void {
   lastWeather = { ...weather };
   lastField = field;
+  lastMusicTrack = musicTrack;
   simulation.startFlight(weather, launch, field);
   // A town strip falls back to a winch, so remember what was actually flown.
   lastLaunch = simulation.launch;
@@ -81,7 +85,7 @@ function startFlight(
   landingAudioPlayed = false;
   appState = "flying";
   audio.start();
-  audio.startScore();
+  audio.startScore(musicTrack);
   audio.setActive(true);
 }
 
@@ -145,7 +149,7 @@ function toggleFreeCamera(): void {
 
 function restartFlight(): void {
   if (!lastWeather) return;
-  startFlight(lastWeather, lastLaunch, lastField);
+  startFlight(lastWeather, lastLaunch, lastField, lastMusicTrack);
 }
 
 function showMenu(): void {
@@ -202,7 +206,7 @@ function handleHotkeys(): void {
   // Shift+S leaves the score alone.
   if (keyboard.consume("KeyM") && (appState === "flying" || appState === "paused")) {
     const music = audio.toggleMusic();
-    simulation.showMessage(music ? "Ambient music on" : "Ambient music off", 1.8);
+    simulation.showMessage(music ? "Music on" : "Music off", 1.8);
   }
 
   if (keyboard.consumeShifted("KeyS")) {

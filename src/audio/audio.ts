@@ -49,6 +49,53 @@ const MUSIC_LEVEL = 1.1;
 /** Fallback eighth-note length before the first flight picks a tempo. */
 const MUSIC_STEP_SECONDS = 30 / 72;
 
+export type MusicTrack = "ambient" | "synthwave";
+
+/**
+ * Synthwave: an eight-bar night-drive loop in A minor, transposed per flight.
+ * The pad, bass, arpeggio, drums and lead all share the same bar grid.
+ */
+const SYNTH_BPM_MIN = 94;
+const SYNTH_BPM_MAX = 110;
+const SYNTH_STEPS_PER_BAR = 16;
+const SYNTH_BARS = 8;
+const SYNTH_CHORDS = [
+  { root: 45, intervals: [0, 3, 7, 10, 14] }, // Am9
+  { root: 41, intervals: [0, 4, 7, 11, 14] }, // Fmaj9
+  { root: 48, intervals: [0, 4, 7, 11, 14] }, // Cmaj9
+  { root: 43, intervals: [0, 4, 7, 10, 14] }, // G9
+  { root: 45, intervals: [0, 3, 7, 10, 14] }, // Am9
+  { root: 41, intervals: [0, 4, 7, 11, 14] }, // Fmaj9
+  { root: 50, intervals: [0, 3, 7, 10, 14] }, // Dm9
+  { root: 40, intervals: [0, 4, 7, 10, 14] }, // E7
+] as const;
+const SYNTH_KEYS = [-5, -2, 0, 2, 5, 7] as const;
+const SYNTH_ARP = [0, 1, 2, 3, 4, 3, 2, 1] as const;
+/** Sparse lead motif, indexed by sixth-note step; null rests. */
+const SYNTH_LEAD_MOTIF = [
+  null,
+  null,
+  4,
+  null,
+  null,
+  null,
+  3,
+  null,
+  2,
+  null,
+  null,
+  4,
+  null,
+  2,
+  null,
+  null,
+] as const;
+const SYNTH_PAD_GAINS = [0.22, 0.17, 0.14, 0.11, 0.09] as const;
+
+function midiToHz(note: number): number {
+  return 440 * 2 ** ((note - 69) / 12);
+}
+
 /** Small WebAudio soundscape: wind, vario beeps, a stall horn and a thud. */
 export class AudioEngine {
   private context: AudioContext | null = null;
@@ -62,8 +109,13 @@ export class AudioEngine {
   private towGain: GainNode | null = null;
   private musicGain: GainNode | null = null;
   private musicPadGain: GainNode | null = null;
+  private musicFilter: BiquadFilterNode | null = null;
   private musicDelay: DelayNode | null = null;
   private musicVoices: MusicVoice[] = [];
+  private musicTrack: MusicTrack = "ambient";
+  private synthTranspose = 0;
+  private synthRoot = 45;
+  private synthChord: readonly number[] = [];
   private musicEnabled = false;
   private musicStepClock = 0;
   private musicStepSeconds = MUSIC_STEP_SECONDS;
@@ -186,6 +238,7 @@ export class AudioEngine {
       musicFilter.type = "lowpass";
       musicFilter.frequency.value = 1100;
       musicFilter.Q.value = 0.4;
+      this.musicFilter = musicFilter;
 
       // A separate pad gain lets each new chord swell in instead of sitting
       // flat for its whole duration.
@@ -247,6 +300,10 @@ export class AudioEngine {
       wet.connect(musicGain);
       this.musicDelay = musicDelay;
 
+      this.configureMusic(this.musicTrack);
+      if (this.musicTrack === "synthwave") this.applySynthBar(0, true);
+      else this.applyChord(0);
+
       this.active = true;
     } catch {
       this.context = null;
@@ -268,7 +325,7 @@ export class AudioEngine {
     }
   }
 
-  /** Toggle the ambient score. Off by default and independent of the mix mute. */
+  /** Toggle the score. Off by default and independent of the mix mute. */
   toggleMusic(): boolean {
     this.musicEnabled = !this.musicEnabled;
     if (this.context && this.musicGain) {
@@ -287,20 +344,67 @@ export class AudioEngine {
    * the form. Safe before the audio context exists; the settings apply once
    * it does.
    */
-  startScore(): void {
+  startScore(track: MusicTrack = this.musicTrack): void {
+    this.musicTrack = track;
+    this.musicStepClock = 0;
+    this.musicBeatStep = 0;
+
+    if (track === "synthwave") {
+      this.synthTranspose = SYNTH_KEYS[Math.floor(Math.random() * SYNTH_KEYS.length)];
+      this.synthChord = [];
+      this.musicStepSeconds =
+        15 / (SYNTH_BPM_MIN + Math.random() * (SYNTH_BPM_MAX - SYNTH_BPM_MIN));
+      this.configureMusic(track);
+      this.applySynthBar(0, true);
+      return;
+    }
+
     const key = MUSIC_KEYS[Math.floor(Math.random() * MUSIC_KEYS.length)];
     this.musicPitchRatio = 2 ** (key / 12);
     this.musicStepSeconds =
       30 / (MUSIC_BPM_MIN + Math.random() * (MUSIC_BPM_MAX - MUSIC_BPM_MIN));
-    this.musicStepClock = 0;
-    this.musicBeatStep = 0;
     this.musicMelodyIndex = 2;
+    this.configureMusic(track);
     this.applyChord(0);
+  }
+
+  /** Shape the shared pad for the selected score. */
+  private configureMusic(track: MusicTrack): void {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+
+    this.musicFilter?.frequency.setTargetAtTime(
+      track === "synthwave" ? 1900 : 1100,
+      now,
+      0.3,
+    );
+    this.musicDelay?.delayTime.setTargetAtTime(
+      track === "synthwave" ? 0.34 : 0.42,
+      now,
+      0.2,
+    );
+
+    for (let i = 0; i < this.musicVoices.length; i++) {
+      const voice = this.musicVoices[i];
+      voice.oscillator.type =
+        track === "synthwave"
+          ? i <= 3
+            ? "sawtooth"
+            : "triangle"
+          : i <= 2
+            ? "triangle"
+            : "sine";
+      voice.oscillator.detune.setTargetAtTime(
+        (i - 2) * (track === "synthwave" ? 9 : 4),
+        now,
+        0.2,
+      );
+    }
   }
 
   /**
    * Toggle the effects mix (wind, vario, stall, tug, touchdown) without
-   * touching the ambient score, which has its own toggle.
+   * touching the score, which has its own toggle.
    */
   toggleSound(): boolean {
     this.sfxMuted = !this.sfxMuted;
@@ -428,7 +532,7 @@ export class AudioEngine {
     oscillator.stop(now + 0.36);
   }
 
-  /** Advance the ambient score on a single swung eighth-note grid. */
+  /** Advance the selected score on its step grid. */
   private updateMusic(dt: number): void {
     if (!this.context || !this.musicGain) return;
 
@@ -444,16 +548,20 @@ export class AudioEngine {
     if (steps === 4) this.musicStepClock = 0;
   }
 
-  /** Length of one eighth-note step, with the odd step shortened for swing. */
+  /** Length of one step: swung eighths for ambient, straight 16ths for synth. */
   private stepSeconds(step: number): number {
+    if (this.musicTrack === "synthwave") return this.musicStepSeconds;
     const pair = this.musicStepSeconds * 2;
     return pair * (step % 2 === 0 ? MUSIC_SWING : 1 - MUSIC_SWING);
   }
 
   /** One step of the score: harmony, bells, melody and pulse all share it. */
   private musicStep(): void {
-    const step = this.musicBeatStep;
-    this.musicBeatStep++;
+    const step = this.musicBeatStep++;
+    if (this.musicTrack === "synthwave") {
+      this.synthStep(step);
+      return;
+    }
 
     if (step % MUSIC_STEPS_PER_CHORD === 0) {
       this.applyChord(Math.floor(step / MUSIC_STEPS_PER_CHORD) % MUSIC_FORM_CHORDS);
@@ -501,6 +609,82 @@ export class AudioEngine {
       // Dip and swell around each change so the pad has a pulse of its own.
       this.musicPadGain.gain.setTargetAtTime(0.75, now, 0.12);
       this.musicPadGain.gain.setTargetAtTime(1, now + 0.4, 0.8);
+    }
+  }
+
+  /** Move the shared pad to a synthwave bar and store its chord. */
+  private applySynthBar(bar: number, instant = false): void {
+    const chord = SYNTH_CHORDS[bar % SYNTH_BARS];
+    const root = chord.root + this.synthTranspose;
+    this.synthRoot = root;
+    this.synthChord = chord.intervals.map((interval) => root + interval);
+    if (!this.context) return;
+
+    const now = this.context.currentTime;
+    for (let i = 0; i < this.musicVoices.length; i++) {
+      const voice = this.musicVoices[i];
+      const midi = this.synthChord[i] ?? this.synthChord[0] + 12;
+      const gain = SYNTH_PAD_GAINS[i] ?? 0.08;
+      voice.oscillator.frequency.setTargetAtTime(
+        midiToHz(midi),
+        now + i * 0.012,
+        instant ? 0.08 : 0.25,
+      );
+      voice.gain.gain.setTargetAtTime(gain * (instant ? 1 : 0.55), now, 0.04);
+      voice.gain.gain.setTargetAtTime(gain, now + 0.1 + i * 0.02, instant ? 0.18 : 0.4);
+    }
+
+    if (this.musicPadGain) {
+      this.musicPadGain.gain.setTargetAtTime(instant ? 1 : 0.75, now, 0.08);
+      this.musicPadGain.gain.setTargetAtTime(1, now + 0.25, 0.5);
+    }
+  }
+
+  /** One 16th-note step of the synthwave loop. */
+  private synthStep(step: number): void {
+    const bar = Math.floor(step / SYNTH_STEPS_PER_BAR) % SYNTH_BARS;
+    const beat = step % SYNTH_STEPS_PER_BAR;
+    if (beat === 0) this.applySynthBar(bar);
+
+    const notes = this.synthChord;
+    if (notes.length === 0) return;
+
+    // Bass: root on every beat, with an octave lift on the and of three.
+    if (beat % 4 === 0) {
+      this.synthBass(midiToHz(this.synthRoot - 12), 0.16, 0.42);
+    } else if (beat % 4 === 2) {
+      const lift = beat === 6 ? 12 : 0;
+      this.synthBass(midiToHz(this.synthRoot - 12 + lift), 0.08, 0.26);
+    }
+
+    // Arpeggio: eighths in the first half, sixteenths once the B section opens.
+    const arpEvery = bar >= 4 ? 1 : 2;
+    if (beat % arpEvery === 0) {
+      const index = Math.floor(step / arpEvery) % SYNTH_ARP.length;
+      const tone = notes[SYNTH_ARP[index] % notes.length] + 12;
+      const pan = index % 2 === 0 ? -0.4 : 0.4;
+      this.synthArp(midiToHz(tone), 0.032, pan);
+    }
+
+    // Four-on-the-floor drums, with a small fill at the end of the loop.
+    if (beat % 4 === 0) this.synthKick(0.32);
+    if (beat === 4 || beat === 12) this.synthSnare(0.14);
+    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(0.1);
+    if (beat % 2 === 0) {
+      this.synthHat(
+        beat % 4 === 0 ? 0.02 : 0.012,
+        beat === 14,
+        beat % 4 === 0 ? -0.35 : 0.35,
+      );
+    }
+
+    // A sparse lead phrase arrives after the intro and follows the chord.
+    if (bar >= 2) {
+      const tone = SYNTH_LEAD_MOTIF[beat];
+      if (tone !== null) {
+        const note = notes[tone % notes.length] + 12;
+        this.synthLead(midiToHz(note), 0.045, 0.55);
+      }
     }
   }
 
@@ -552,6 +736,228 @@ export class AudioEngine {
     if (bar % 2 === 1 && Math.random() > 0.12) {
       this.musicShaker(0.024, bar % 4 === 1 ? -0.5 : 0.5);
     }
+  }
+
+  /** A punchy synthwave kick with a quiet noise click. */
+  private synthKick(level: number): void {
+    if (!this.context || !this.musicGain) return;
+    const now = this.context.currentTime;
+    const oscillator = this.context.createOscillator();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(145, now);
+    oscillator.frequency.exponentialRampToValueAtTime(42, now + 0.18);
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(level, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+    oscillator.connect(gain);
+    gain.connect(this.musicGain);
+    oscillator.start(now);
+    oscillator.stop(now + 0.32);
+
+    if (this.noiseBuffer) {
+      const click = this.context.createBufferSource();
+      click.buffer = this.noiseBuffer;
+      const filter = this.context.createBiquadFilter();
+      filter.type = "highpass";
+      filter.frequency.value = 2400;
+      const clickGain = this.context.createGain();
+      clickGain.gain.setValueAtTime(0.035, now);
+      clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+      click.connect(filter);
+      filter.connect(clickGain);
+      clickGain.connect(this.musicGain);
+      click.start(now, Math.random() * 1.2, 0.035);
+    }
+  }
+
+  /** A bright synthwave snare with a short body and a little delay. */
+  private synthSnare(level: number): void {
+    if (!this.context || !this.musicGain || !this.noiseBuffer) return;
+    const now = this.context.currentTime;
+
+    const source = this.context.createBufferSource();
+    source.buffer = this.noiseBuffer;
+    const filter = this.context.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 1900;
+    filter.Q.value = 0.8;
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(level * (0.9 + Math.random() * 0.2), now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGain);
+    if (this.musicDelay) {
+      const send = this.context.createGain();
+      send.gain.value = 0.12;
+      gain.connect(send);
+      send.connect(this.musicDelay);
+    }
+    source.start(now, Math.random() * 1.2, 0.24);
+
+    const body = this.context.createOscillator();
+    body.type = "triangle";
+    body.frequency.setValueAtTime(180, now);
+    body.frequency.exponentialRampToValueAtTime(120, now + 0.1);
+    const bodyGain = this.context.createGain();
+    bodyGain.gain.setValueAtTime(level * 0.45, now);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+    body.connect(bodyGain);
+    bodyGain.connect(this.musicGain);
+    body.start(now);
+    body.stop(now + 0.14);
+  }
+
+  /** A short closed or open hi-hat. */
+  private synthHat(level: number, open: boolean, pan: number): void {
+    if (!this.context || !this.musicGain || !this.noiseBuffer) return;
+    const now = this.context.currentTime;
+    const source = this.context.createBufferSource();
+    source.buffer = this.noiseBuffer;
+    const filter = this.context.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 6500;
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(level * (0.85 + Math.random() * 0.3), now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + (open ? 0.17 : 0.05));
+    const panner = this.context.createStereoPanner();
+    panner.pan.value = pan;
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.musicGain);
+    source.start(now, Math.random() * 1.5, open ? 0.18 : 0.06);
+  }
+
+  /** A filtered saw bass with a sine sub. */
+  private synthBass(frequency: number, level: number, duration: number): void {
+    if (!this.context || !this.musicGain) return;
+    const now = this.context.currentTime;
+
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(level, now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    const filter = this.context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(Math.min(700, Math.max(240, frequency * 7)), now);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(110, frequency * 2.5), now + duration);
+    filter.Q.value = 4;
+
+    const saw = this.context.createOscillator();
+    saw.type = "sawtooth";
+    saw.frequency.value = frequency;
+    const sawGain = this.context.createGain();
+    sawGain.gain.value = 0.65;
+    saw.connect(filter);
+    filter.connect(sawGain);
+    sawGain.connect(gain);
+
+    const sub = this.context.createOscillator();
+    sub.type = "sine";
+    sub.frequency.value = frequency;
+    const subGain = this.context.createGain();
+    subGain.gain.value = 0.5;
+    sub.connect(subGain);
+    subGain.connect(gain);
+
+    gain.connect(this.musicGain);
+    saw.start(now);
+    sub.start(now);
+    saw.stop(now + duration + 0.05);
+    sub.stop(now + duration + 0.05);
+  }
+
+  /** A short detuned saw arpeggio note with a stereo delay send. */
+  private synthArp(frequency: number, level: number, pan: number): void {
+    if (!this.context || !this.musicGain) return;
+    const now = this.context.currentTime;
+
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(level, now + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+
+    const filter = this.context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = Math.min(4200, Math.max(900, frequency * 5));
+    filter.Q.value = 1.4;
+
+    const panner = this.context.createStereoPanner();
+    panner.pan.value = pan;
+
+    const first = this.context.createOscillator();
+    first.type = "sawtooth";
+    first.frequency.value = frequency;
+    first.detune.value = -7;
+    const second = this.context.createOscillator();
+    second.type = "sawtooth";
+    second.frequency.value = frequency;
+    second.detune.value = 7;
+
+    first.connect(filter);
+    second.connect(filter);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.musicGain);
+    if (this.musicDelay) panner.connect(this.musicDelay);
+
+    first.start(now);
+    second.start(now);
+    first.stop(now + 0.2);
+    second.stop(now + 0.2);
+  }
+
+  /** A longer detuned lead note with a touch of vibrato and delay. */
+  private synthLead(frequency: number, level: number, duration: number): void {
+    if (!this.context || !this.musicGain) return;
+    const now = this.context.currentTime;
+
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(level, now + 0.035);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    const filter = this.context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 2600;
+    filter.Q.value = 0.7;
+
+    const panner = this.context.createStereoPanner();
+    panner.pan.value = -0.12;
+
+    const first = this.context.createOscillator();
+    first.type = "sawtooth";
+    first.frequency.value = frequency;
+    first.detune.value = -5;
+    const second = this.context.createOscillator();
+    second.type = "sawtooth";
+    second.frequency.value = frequency;
+    second.detune.value = 5;
+
+    const vibrato = this.context.createOscillator();
+    vibrato.type = "sine";
+    vibrato.frequency.value = 5.2;
+    const vibratoDepth = this.context.createGain();
+    vibratoDepth.gain.value = 5;
+    vibrato.connect(vibratoDepth);
+    vibratoDepth.connect(first.detune);
+    vibratoDepth.connect(second.detune);
+
+    first.connect(filter);
+    second.connect(filter);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.musicGain);
+    if (this.musicDelay) panner.connect(this.musicDelay);
+
+    first.start(now);
+    second.start(now);
+    vibrato.start(now);
+    first.stop(now + duration + 0.1);
+    second.stop(now + duration + 0.1);
+    vibrato.stop(now + duration + 0.1);
   }
 
   /** A soft rounded kick. */

@@ -28,7 +28,8 @@ traffic — just weather, terrain, and the next climb.
   bearing, designator, and length.
 - **Fly your way.** Chase, cockpit, orbit, and a free inspection camera; a full
   landing roll with wheel brakes, a post-flight summary, and procedural wind,
-  vario, stall, and ambient audio.
+  vario, and stall audio. Two live scores are available: quiet ambient or
+  night-drive synthwave.
 - **Read the sky.** The flight computer shows the nearest thermal, with a
   centering cue inside a core, and the two nearest fields, so there is always a
   landing option in sight.
@@ -43,8 +44,8 @@ npm run dev
 ```
 
 Open the printed URL (normally <http://localhost:5173>), pick a weather preset,
-a departure field, and a launch, then press **Fly**. On the menu, **Enter**
-starts the selected flight.
+a departure field, a soundtrack, and a launch, then press **Fly**. On the menu,
+**Enter** starts the selected flight.
 
 ## Controls
 
@@ -70,7 +71,7 @@ starts the selected flight.
 | `F2` | Toggle flight assist (auto-rudder; on by default) |
 | `F3` | Debug telemetry overlay |
 | `F4` | Thermal helpers (particles and core cue) |
-| `M` | Ambient music on / off (off by default) |
+| `M` | Music on / off (ambient or synthwave, chosen on the menu) |
 | `Shift` + `S` | Sound effects on / off (music unaffected) |
 
 ## Your first flight

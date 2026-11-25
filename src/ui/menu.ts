@@ -1,3 +1,4 @@
+import type { MusicTrack } from "../audio/audio";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherSettings } from "../config";
 import {
   HOME_AIRFIELD,
@@ -19,6 +20,7 @@ interface SavedSettings {
   weather: WeatherSettings;
   launch: LaunchType;
   field?: string;
+  musicTrack: MusicTrack;
 }
 
 export class MenuUI {
@@ -32,6 +34,7 @@ export class MenuUI {
   private readonly launch = byId<HTMLSelectElement>("launch");
   private readonly launchHint = byId<HTMLElement>("launch-hint");
   private readonly departure = byId<HTMLSelectElement>("departure");
+  private readonly musicTrack = byId<HTMLSelectElement>("music-track");
   private readonly wind = byId<HTMLInputElement>("wind");
   private readonly windFrom = byId<HTMLInputElement>("windfrom");
   private readonly thermal = byId<HTMLInputElement>("thermal");
@@ -52,9 +55,15 @@ export class MenuUI {
   private weather: WeatherSettings;
   private selectedLaunch: LaunchType;
   private selectedFieldId = "home";
+  private selectedMusicTrack: MusicTrack = "ambient";
   private fields: AirfieldSpec[] = [];
   private callbacks: {
-    onFly: (weather: WeatherSettings, launch: LaunchType, field: AirfieldSpec) => void;
+    onFly: (
+      weather: WeatherSettings,
+      launch: LaunchType,
+      field: AirfieldSpec,
+      musicTrack: MusicTrack,
+    ) => void;
     onResume: () => void;
     onRestart: () => void;
     onMenu: () => void;
@@ -63,7 +72,12 @@ export class MenuUI {
   };
 
   constructor(callbacks: {
-    onFly: (weather: WeatherSettings, launch: LaunchType, field: AirfieldSpec) => void;
+    onFly: (
+      weather: WeatherSettings,
+      launch: LaunchType,
+      field: AirfieldSpec,
+      musicTrack: MusicTrack,
+    ) => void;
     onResume: () => void;
     onRestart: () => void;
     onMenu: () => void;
@@ -75,6 +89,7 @@ export class MenuUI {
     this.weather = { ...(saved?.weather ?? DEFAULT_WEATHER) };
     this.selectedLaunch = saved?.launch ?? "winch";
     this.selectedFieldId = saved?.field ?? "home";
+    this.selectedMusicTrack = saved?.musicTrack === "synthwave" ? "synthwave" : "ambient";
 
     for (const preset of WEATHER_PRESETS) {
       const option = document.createElement("option");
@@ -91,6 +106,7 @@ export class MenuUI {
     this.applyWeather(this.weather, saved ? "custom" : "standard");
     this.populateFields();
     this.launch.value = this.selectedLaunch;
+    this.musicTrack.value = this.selectedMusicTrack;
     this.syncField();
     this.menu.classList.remove("hidden");
   }
@@ -104,6 +120,10 @@ export class MenuUI {
     this.departure.addEventListener("change", () => {
       this.selectedFieldId = this.departure.value;
       this.syncField();
+    });
+    this.musicTrack.addEventListener("change", () => {
+      this.selectedMusicTrack =
+        this.musicTrack.value === "synthwave" ? "synthwave" : "ambient";
     });
 
     const sliders: Array<[HTMLInputElement, keyof WeatherSettings]> = [
@@ -226,7 +246,12 @@ export class MenuUI {
     this.pause.classList.add("hidden");
     this.summary.classList.add("hidden");
     this.help.classList.add("hidden");
-    this.callbacks.onFly({ ...this.weather }, this.selectedLaunch, this.currentField());
+    this.callbacks.onFly(
+      { ...this.weather },
+      this.selectedLaunch,
+      this.currentField(),
+      this.selectedMusicTrack,
+    );
   }
 
   showMenu(): void {
@@ -306,6 +331,7 @@ export class MenuUI {
         weather: this.weather,
         launch: this.selectedLaunch,
         field: this.selectedFieldId,
+        musicTrack: this.selectedMusicTrack,
       };
       localStorage.setItem("gludor.settings", JSON.stringify(payload));
     } catch {
@@ -323,6 +349,7 @@ export class MenuUI {
         weather: { ...DEFAULT_WEATHER, ...parsed.weather },
         launch: parsed.launch === "air" ? "air" : parsed.launch === "tow" ? "tow" : "winch",
         field: typeof parsed.field === "string" ? parsed.field : undefined,
+        musicTrack: parsed.musicTrack === "synthwave" ? "synthwave" : "ambient",
       };
     } catch {
       return null;

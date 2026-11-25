@@ -184,11 +184,14 @@ showing each strip's town name, bearing, distance, designator, and length.
 
 Audio is synthesized with WebAudio: filtered wind noise scaled by IAS, vario
 lift beeps and a low sink tone, a stall horn, a landing thump, and a filtered
-engine drone while the tug is on the rope. An optional generative score (`M`)
-picks a new key and tempo for each flight and plays an A A' B A' form: a
-breathing five-voice pad, a pentatonic melody and chord-tone bells locked to a
-swung eighth-note grid, over a soft brushed downtempo pulse; it is off by
-default.
+engine drone while the tug is on the rope. The optional score (`M`) is off by
+default and has two generated tracks selected on the menu. **Quiet ambient**
+picks a new key and tempo per flight and plays an A A' B A' form: a breathing
+five-voice pad, a pentatonic melody and chord-tone bells on a swung eighth-note
+grid over a soft brushed pulse. **Night-drive synthwave** is an eight-bar minor
+loop with a detuned pad, filtered bass, arpeggio, four-on-the-floor drums, a
+snare, hats, and a sparse lead, transposed to a fresh key per flight. The menu
+selection is stored with the other settings.
 
 ## Streaming and performance
 
