@@ -191,7 +191,8 @@ five-voice pad, a pentatonic melody and chord-tone bells on a swung eighth-note
 grid over a soft brushed pulse. **Night-drive synthwave** is an eight-bar minor
 loop with a detuned pad, filtered bass, an octave-alternating arpeggio,
 four-on-the-floor drums, a snare, hats, and a sparse lead, transposed to a
-fresh key per flight. The drums sit forward in the mix. The menu selection is
+fresh key per flight. The drums sit forward in the mix and the arpeggio is
+kept behind them. The menu selection is
 stored with the other settings.
 
 ## Streaming and performance
