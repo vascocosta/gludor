@@ -111,6 +111,9 @@ export class AudioEngine {
   private musicPadGain: GainNode | null = null;
   private musicFilter: BiquadFilterNode | null = null;
   private musicDelay: DelayNode | null = null;
+  private padDuckGain: GainNode | null = null;
+  private synthDuckGain: GainNode | null = null;
+  private drumGain: GainNode | null = null;
   private musicVoices: MusicVoice[] = [];
   private musicTrack: MusicTrack = "ambient";
   private synthTranspose = 0;
@@ -232,14 +235,27 @@ export class AudioEngine {
       const musicGain = context.createGain();
       musicGain.gain.value = this.musicEnabled ? MUSIC_LEVEL : 0;
       const musicCompressor = context.createDynamicsCompressor();
-      musicCompressor.threshold.value = -18;
-      musicCompressor.knee.value = 20;
+      musicCompressor.threshold.value = -12;
+      musicCompressor.knee.value = 12;
       musicCompressor.ratio.value = 4;
-      musicCompressor.attack.value = 0.004;
-      musicCompressor.release.value = 0.2;
+      musicCompressor.attack.value = 0.003;
+      musicCompressor.release.value = 0.18;
       musicGain.connect(musicCompressor);
       musicCompressor.connect(master);
       this.musicGain = musicGain;
+
+      // The drums and the melodic synths sit on separate buses. Every kick
+      // pulls the melodic bus down hard for a moment, so the beat punches
+      // through even when the synths are busy.
+      const drumGain = context.createGain();
+      drumGain.gain.value = 1.5;
+      drumGain.connect(musicGain);
+      this.drumGain = drumGain;
+
+      const synthDuckGain = context.createGain();
+      synthDuckGain.gain.value = 1;
+      synthDuckGain.connect(musicGain);
+      this.synthDuckGain = synthDuckGain;
 
       const musicFilter = context.createBiquadFilter();
       musicFilter.type = "lowpass";
@@ -252,7 +268,11 @@ export class AudioEngine {
       const musicPadGain = context.createGain();
       musicPadGain.gain.value = 1;
       musicFilter.connect(musicPadGain);
-      musicPadGain.connect(musicGain);
+      const padDuckGain = context.createGain();
+      padDuckGain.gain.value = 1;
+      musicPadGain.connect(padDuckGain);
+      padDuckGain.connect(musicGain);
+      this.padDuckGain = padDuckGain;
       this.musicPadGain = musicPadGain;
 
       // A very slow filter drift keeps the pad from sounding static.
@@ -647,6 +667,20 @@ export class AudioEngine {
     }
   }
 
+  /** Pull the melodic layers down for a moment under each kick. */
+  private duckSynths(): void {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+    for (const node of [this.padDuckGain, this.synthDuckGain]) {
+      if (!node) continue;
+      const param = node.gain;
+      param.cancelScheduledValues(now);
+      param.setValueAtTime(Math.max(0.001, param.value), now);
+      param.linearRampToValueAtTime(0.18, now + 0.012);
+      param.setTargetAtTime(1, now + 0.07, 0.14);
+    }
+  }
+
   /** One 16th-note step of the synthwave loop. */
   private synthStep(step: number): void {
     const bar = Math.floor(step / SYNTH_STEPS_PER_BAR) % SYNTH_BARS;
@@ -678,12 +712,15 @@ export class AudioEngine {
     }
 
     // Four-on-the-floor drums, with a small fill at the end of the loop.
-    if (beat % 4 === 0) this.synthKick(0.9);
-    if (beat === 4 || beat === 12) this.synthSnare(0.38);
-    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(0.26);
+    if (beat % 4 === 0) {
+      this.duckSynths();
+      this.synthKick(1.05);
+    }
+    if (beat === 4 || beat === 12) this.synthSnare(0.44);
+    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(0.3);
     if (beat % 2 === 0) {
       this.synthHat(
-        beat % 4 === 0 ? 0.065 : 0.036,
+        beat % 4 === 0 ? 0.08 : 0.045,
         beat === 14,
         beat % 4 === 0 ? -0.35 : 0.35,
       );
@@ -755,13 +792,13 @@ export class AudioEngine {
     const now = this.context.currentTime;
     const oscillator = this.context.createOscillator();
     oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(175, now);
-    oscillator.frequency.exponentialRampToValueAtTime(55, now + 0.18);
+    oscillator.frequency.setValueAtTime(180, now);
+    oscillator.frequency.exponentialRampToValueAtTime(60, now + 0.18);
     const gain = this.context.createGain();
     gain.gain.setValueAtTime(level, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
     oscillator.connect(gain);
-    gain.connect(this.musicGain);
+    gain.connect(this.drumGain ?? this.musicGain);
     oscillator.start(now);
     oscillator.stop(now + 0.32);
 
@@ -772,11 +809,11 @@ export class AudioEngine {
       filter.type = "highpass";
       filter.frequency.value = 2400;
       const clickGain = this.context.createGain();
-      clickGain.gain.setValueAtTime(0.16, now);
+      clickGain.gain.setValueAtTime(0.2, now);
       clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
       click.connect(filter);
       filter.connect(clickGain);
-      clickGain.connect(this.musicGain);
+      clickGain.connect(this.drumGain ?? this.musicGain);
       click.start(now, Math.random() * 1.2, 0.035);
     }
   }
@@ -797,7 +834,7 @@ export class AudioEngine {
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
     source.connect(filter);
     filter.connect(gain);
-    gain.connect(this.musicGain);
+    gain.connect(this.drumGain ?? this.musicGain);
     if (this.musicDelay) {
       const send = this.context.createGain();
       send.gain.value = 0.12;
@@ -814,7 +851,7 @@ export class AudioEngine {
     bodyGain.gain.setValueAtTime(level * 0.45, now);
     bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
     body.connect(bodyGain);
-    bodyGain.connect(this.musicGain);
+    bodyGain.connect(this.drumGain ?? this.musicGain);
     body.start(now);
     body.stop(now + 0.14);
   }
@@ -836,7 +873,7 @@ export class AudioEngine {
     source.connect(filter);
     filter.connect(gain);
     gain.connect(panner);
-    panner.connect(this.musicGain);
+    panner.connect(this.drumGain ?? this.musicGain);
     source.start(now, Math.random() * 1.5, open ? 0.18 : 0.06);
   }
 
@@ -873,7 +910,7 @@ export class AudioEngine {
     sub.connect(subGain);
     subGain.connect(gain);
 
-    gain.connect(this.musicGain);
+    gain.connect(this.synthDuckGain ?? this.musicGain);
     saw.start(now);
     sub.start(now);
     saw.stop(now + duration + 0.05);
@@ -911,7 +948,7 @@ export class AudioEngine {
     second.connect(filter);
     filter.connect(gain);
     gain.connect(panner);
-    panner.connect(this.musicGain);
+    panner.connect(this.synthDuckGain ?? this.musicGain);
     if (this.musicDelay) panner.connect(this.musicDelay);
 
     first.start(now);
@@ -960,7 +997,7 @@ export class AudioEngine {
     second.connect(filter);
     filter.connect(gain);
     gain.connect(panner);
-    panner.connect(this.musicGain);
+    panner.connect(this.synthDuckGain ?? this.musicGain);
     if (this.musicDelay) panner.connect(this.musicDelay);
 
     first.start(now);
