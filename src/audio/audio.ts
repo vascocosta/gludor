@@ -90,7 +90,7 @@ const SYNTH_LEAD_MOTIF = [
   null,
   null,
 ] as const;
-const SYNTH_PAD_GAINS = [0.17, 0.13, 0.1, 0.08, 0.06] as const;
+const SYNTH_PAD_GAINS = [0.15, 0.11, 0.085, 0.065, 0.05] as const;
 
 function midiToHz(note: number): number {
   return 440 * 2 ** ((note - 69) / 12);
@@ -651,10 +651,10 @@ export class AudioEngine {
 
     // Bass: root on every beat, with an octave lift on the and of three.
     if (beat % 4 === 0) {
-      this.synthBass(midiToHz(this.synthRoot - 12), 0.13, 0.42);
+      this.synthBass(midiToHz(this.synthRoot - 12), 0.11, 0.42);
     } else if (beat % 4 === 2) {
       const lift = beat === 6 ? 12 : 0;
-      this.synthBass(midiToHz(this.synthRoot - 12 + lift), 0.065, 0.26);
+      this.synthBass(midiToHz(this.synthRoot - 12 + lift), 0.055, 0.26);
     }
 
     // Arpeggio: eighths in the first half, sixteenths once the B section opens.
@@ -667,16 +667,16 @@ export class AudioEngine {
       const octave = bar % 2 === 0 ? 12 : 24;
       const tone = notes[SYNTH_ARP[index] % notes.length] + octave;
       const pan = index % 2 === 0 ? -0.4 : 0.4;
-      this.synthArp(midiToHz(tone), 0.012, pan);
+      this.synthArp(midiToHz(tone), 0.009, pan);
     }
 
     // Four-on-the-floor drums, with a small fill at the end of the loop.
-    if (beat % 4 === 0) this.synthKick(0.58);
-    if (beat === 4 || beat === 12) this.synthSnare(0.24);
-    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(0.17);
+    if (beat % 4 === 0) this.synthKick(0.72);
+    if (beat === 4 || beat === 12) this.synthSnare(0.3);
+    if (bar === SYNTH_BARS - 1 && (beat === 14 || beat === 15)) this.synthSnare(0.21);
     if (beat % 2 === 0) {
       this.synthHat(
-        beat % 4 === 0 ? 0.04 : 0.022,
+        beat % 4 === 0 ? 0.05 : 0.028,
         beat === 14,
         beat % 4 === 0 ? -0.35 : 0.35,
       );
@@ -687,7 +687,7 @@ export class AudioEngine {
       const tone = SYNTH_LEAD_MOTIF[beat];
       if (tone !== null) {
         const note = notes[tone % notes.length] + 12;
-        this.synthLead(midiToHz(note), 0.026, 0.55);
+        this.synthLead(midiToHz(note), 0.024, 0.55);
       }
     }
   }
@@ -765,7 +765,7 @@ export class AudioEngine {
       filter.type = "highpass";
       filter.frequency.value = 2400;
       const clickGain = this.context.createGain();
-      clickGain.gain.setValueAtTime(0.08, now);
+      clickGain.gain.setValueAtTime(0.11, now);
       clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
       click.connect(filter);
       filter.connect(clickGain);
